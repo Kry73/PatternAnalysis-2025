@@ -27,7 +27,7 @@ In this study, GFNet is adapted to the Alzheimer’s Disease Neuroimaging Initia
 
 ## File Structure
 
-'''
+```
 recognition/
 └── GFNet-s4979971
     ├── dataset.py      # Data loader and preprocessing
@@ -36,7 +36,7 @@ recognition/
     ├── predict.py      # Example usage
     ├── README.md       # This file
     ├── images          # Folder containing diagrams and visualisation
-'''
+```
 
 ## Dependencies
 
@@ -50,9 +50,9 @@ This project uses the ADNI (Alzheimer's Disease Neuroimaging Initiative) dataset
 *NC (Normal Control): Cognitively normal subjects
 
 **Dataset Statistic**
-*Total Scans: 2,189 unique 3D MRI scans
-*Total Images: 30,520 2D slices
-*Train Set: 21,520 images from 1,076 unique scans
+* Total Scans: 2,189 unique 3D MRI scans
+* Total Images: 30,520 2D slices
+* Train Set: 21,520 images from 1,076 unique scans
     - AD: 10,400 images (48.3%)
     - NC: 11,120 images (51.7%)
 *Test Set: 9,000 images from 450 unique scans
@@ -61,8 +61,8 @@ This project uses the ADNI (Alzheimer's Disease Neuroimaging Initiative) dataset
 *Average slices per scan: 20.0 slices
 *Classes: 2 (AD, NC) - Well balanced at approximately 50/50
 
-** Directory Structure **
-'''
+**Directory Structure**
+```
 ADNI/
 ├── meta_data_with_label.json
 └── AD_NC/
@@ -72,7 +72,7 @@ ADNI/
     └── test/
         ├── AD/    # 4,460 images
         └── NC/    # 4,540 images
-'''
+```
 
 ### dataset.py
 
