@@ -264,7 +264,7 @@ def train_model(
     
     # Training parameters
     batch_size=16,  # Reduced for pyramid architecture (uses more memory)
-    num_epochs=5,
+    num_epochs=100,
     learning_rate=1e-4,  # Slightly higher for pyramid network
     weight_decay=0.05,
     warmup_epochs=10,

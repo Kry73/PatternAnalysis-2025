@@ -341,6 +341,275 @@ def plot_roc_curve(fpr, tpr, roc_auc, save_path):
     print(f"  ROC curve saved to {save_path.name}")
 
 
+def visualize_frequency_filters(model, save_dir):
+    """
+    Visualize all learned frequency filters in a single comprehensive image.
+    
+    Args:
+        model: Trained PyramidGFNet model
+        save_dir: Directory to save visualizations
+    """
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    print("\nVisualizing frequency filters...")
+    
+    # Collect all filters
+    all_filters = []
+    stage_info = []
+    
+    if hasattr(model, 'stages'):
+        # PyramidGFNet - collect from all stages
+        for stage_idx in range(len(model.stages)):
+            stage = model.stages[stage_idx]
+            for block_idx in range(len(stage.blocks)):
+                block = stage.blocks[block_idx]
+                
+                # Get complex weights from GlobalFilter
+                complex_weight = block.filter.complex_weight.detach().cpu()
+                weight = torch.view_as_complex(complex_weight)
+                magnitude = torch.abs(weight).numpy()
+                magnitude_avg = magnitude.mean(axis=-1)  # Average over channels
+                
+                all_filters.append(magnitude_avg)
+                stage_info.append((stage_idx + 1, block_idx + 1))
+    
+    elif hasattr(model, 'blocks'):
+        # Old GFNet - collect from all blocks
+        for block_idx in range(len(model.blocks)):
+            block = model.blocks[block_idx]
+            
+            complex_weight = block.filter.complex_weight.detach().cpu()
+            weight = torch.view_as_complex(complex_weight)
+            magnitude = torch.abs(weight).numpy()
+            magnitude_avg = magnitude.mean(axis=-1)
+            
+            all_filters.append(magnitude_avg)
+            stage_info.append((1, block_idx + 1))
+    
+    # Create comprehensive visualization
+    num_filters = len(all_filters)
+    cols = 4
+    rows = (num_filters + cols - 1) // cols
+    
+    fig, axes = plt.subplots(rows, cols, figsize=(16, 4*rows))
+    if rows == 1:
+        axes = axes.reshape(1, -1)
+    axes = axes.flatten()
+    
+    for idx, (filter_mag, (stage, block)) in enumerate(zip(all_filters, stage_info)):
+        im = axes[idx].imshow(filter_mag, cmap='viridis', aspect='auto')
+        if hasattr(model, 'stages'):
+            axes[idx].set_title(f'Stage {stage}, Block {block}', fontsize=10, fontweight='bold')
+        else:
+            axes[idx].set_title(f'Block {block}', fontsize=10, fontweight='bold')
+        axes[idx].set_xlabel('Freq (width)', fontsize=8)
+        axes[idx].set_ylabel('Freq (height)', fontsize=8)
+        plt.colorbar(im, ax=axes[idx], fraction=0.046, pad=0.04)
+    
+    # Hide unused subplots
+    for idx in range(num_filters, len(axes)):
+        axes[idx].axis('off')
+    
+    plt.suptitle('Learned Frequency Filters (All Stages & Blocks)', 
+                fontsize=16, fontweight='bold', y=0.995)
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+    plt.savefig(save_dir / 'all_frequency_filters.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"✓ All filters saved to: {save_dir / 'all_frequency_filters.png'} ({num_filters} filters)")
+
+
+def visualize_feature_maps(model, image_path, transform, device, save_dir):
+    """
+    Visualize all intermediate feature maps in a single comprehensive image.
+    
+    Args:
+        model: Trained model
+        image_path: Path to input image
+        transform: Transform pipeline
+        device: Device to run on
+        save_dir: Directory to save visualizations
+    """
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    model.eval()
+    
+    # Load image
+    image = Image.open(image_path).convert('L')
+    image_tensor = transform(image).unsqueeze(0).to(device)
+    
+    print(f"\nVisualizing feature maps for: {Path(image_path).name}")
+    
+    all_features = []
+    stage_info = []
+    
+    # Get intermediate features
+    with torch.no_grad():
+        if hasattr(model, 'stages'):
+            # PyramidGFNet
+            x, (H, W) = model.patch_embed1(image_tensor)
+            x = x + model.pos_embed1
+            x = model.pos_drop(x)
+            
+            # Process through each stage
+            for stage_idx in range(len(model.stages)):
+                x = model.stages[stage_idx](x, H, W)
+                
+                # Get features
+                B, N, C = x.shape
+                x_grid = x[0].reshape(H, W, C)[:, :, :8].permute(2, 0, 1)  # First 8 channels
+                
+                for ch in range(min(8, C)):
+                    all_features.append(x_grid[ch].cpu().numpy())
+                    stage_info.append((stage_idx + 1, ch + 1, H, W, C))
+                
+                # Merge for next stage
+                if stage_idx < len(model.merges):
+                    x, H, W = model.merges[stage_idx](x, H, W)
+        
+        else:
+            # Old GFNet
+            x, (H, W) = model.patch_embed(image_tensor)
+            x = x + model.pos_embed
+            
+            # Process through blocks
+            for block in model.blocks[:4]:
+                x = block(x, spatial_size=(H, W))
+            
+            B, N, C = x.shape
+            x_grid = x[0].reshape(H, W, C)[:, :, :16].permute(2, 0, 1)
+            
+            for ch in range(min(16, C)):
+                all_features.append(x_grid[ch].cpu().numpy())
+                stage_info.append((1, ch + 1, H, W, C))
+    
+    # Create comprehensive visualization
+    num_features = len(all_features)
+    cols = 8
+    rows = (num_features + cols - 1) // cols
+    
+    fig, axes = plt.subplots(rows, cols, figsize=(20, 2.5*rows))
+    if rows == 1:
+        axes = axes.reshape(1, -1)
+    axes = axes.flatten()
+    
+    for idx, (feat, (stage, ch, h, w, total_ch)) in enumerate(zip(all_features, stage_info)):
+        axes[idx].imshow(feat, cmap='viridis')
+        axes[idx].axis('off')
+        if hasattr(model, 'stages'):
+            axes[idx].set_title(f'S{stage}C{ch}\n{h}×{w}', fontsize=8)
+        else:
+            axes[idx].set_title(f'Ch{ch}\n{h}×{w}', fontsize=8)
+    
+    # Hide unused subplots
+    for idx in range(num_features, len(axes)):
+        axes[idx].axis('off')
+    
+    plt.suptitle(f'Feature Maps (All Stages) - {Path(image_path).name}', 
+                fontsize=16, fontweight='bold', y=0.998)
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+    plt.savefig(save_dir / 'all_feature_maps.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"✓ All feature maps saved to: {save_dir / 'all_feature_maps.png'} ({num_features} channels)")
+
+
+def visualize_attention_maps(model, image_path, transform, device, save_dir):
+    """
+    Visualize frequency domain attention in a single comprehensive image.
+    
+    Args:
+        model: Trained model
+        image_path: Path to input image
+        transform: Transform pipeline
+        device: Device to run on
+        save_dir: Directory to save visualizations
+    """
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    model.eval()
+    
+    # Load image
+    image = Image.open(image_path).convert('L')
+    image_tensor = transform(image).unsqueeze(0).to(device)
+    
+    print(f"\nVisualizing frequency attention for: {Path(image_path).name}")
+    
+    # Hook to capture frequency domain features
+    freq_features = []
+    stage_ids = []
+    
+    def make_hook_fn(stage_id):
+        def hook_fn(module, input, output):
+            x = input[0]
+            B, N, C = x.shape
+            a = b = int(np.sqrt(N))
+            x_reshaped = x.view(B, a, b, C)
+            x_fft = torch.fft.rfft2(x_reshaped, dim=(1, 2), norm='ortho')
+            freq_features.append(torch.abs(x_fft).detach().cpu())
+            stage_ids.append(stage_id)
+        return hook_fn
+    
+    # Register hooks
+    hooks = []
+    if hasattr(model, 'stages'):
+        for stage_idx, stage in enumerate(model.stages):
+            hook = stage.blocks[0].filter.register_forward_hook(make_hook_fn(stage_idx + 1))
+            hooks.append(hook)
+    elif hasattr(model, 'blocks'):
+        for block_idx in range(min(8, len(model.blocks))):
+            hook = model.blocks[block_idx].filter.register_forward_hook(make_hook_fn(block_idx + 1))
+            hooks.append(hook)
+    
+    # Forward pass
+    with torch.no_grad():
+        _ = model(image_tensor)
+    
+    # Remove hooks
+    for hook in hooks:
+        hook.remove()
+    
+    # Create comprehensive visualization
+    num_stages = len(freq_features)
+    cols = min(4, num_stages)
+    rows = (num_stages + cols - 1) // cols
+    
+    fig, axes = plt.subplots(rows, cols, figsize=(5*cols, 4*rows))
+    if num_stages == 1:
+        axes = [axes]
+    else:
+        axes = axes.flatten()
+    
+    for idx, (freq_feat, stage_id) in enumerate(zip(freq_features, stage_ids)):
+        # Average over batch and channels
+        freq_magnitude = freq_feat[0].mean(dim=-1).numpy()
+        
+        im = axes[idx].imshow(freq_magnitude, cmap='hot', aspect='auto')
+        if hasattr(model, 'stages'):
+            axes[idx].set_title(f'Stage {stage_id}\nFreq Attention', fontsize=11, fontweight='bold')
+        else:
+            axes[idx].set_title(f'Block {stage_id}\nFreq Attention', fontsize=11, fontweight='bold')
+        axes[idx].set_xlabel('Frequency (width)', fontsize=9)
+        axes[idx].set_ylabel('Frequency (height)', fontsize=9)
+        plt.colorbar(im, ax=axes[idx], fraction=0.046, pad=0.04)
+    
+    # Hide unused subplots
+    for idx in range(num_stages, len(axes) if num_stages > 1 else 1):
+        if num_stages > 1:
+            axes[idx].axis('off')
+    
+    plt.suptitle(f'Frequency Domain Attention Maps - {Path(image_path).name}', 
+                fontsize=16, fontweight='bold', y=0.995)
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+    plt.savefig(save_dir / 'all_frequency_attention.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"✓ Frequency attention saved to: {save_dir / 'all_frequency_attention.png'} ({num_stages} stages)")
+
+
 def analyze_misclassifications(model, test_loader, device, save_dir, num_samples=10):
     """
     Analyze and visualize misclassified samples.
@@ -627,7 +896,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Pyramid GFNet Alzheimer\'s Detection - Prediction & Evaluation')
-    parser.add_argument('--checkpoint', type=str, default='./checkpoints/best_model.pth',
+    parser.add_argument('--checkpoint', type=str, default='./checkpoints_pyramid/best_model.pth',
                        help='Path to model checkpoint')
     parser.add_argument('--mode', type=str, default='evaluate', choices=['evaluate', 'predict_single', 'predict_dir'],
                        help='Operation mode')
@@ -647,6 +916,14 @@ def main():
                        help='Path to image directory (for predict_dir)')
     parser.add_argument('--visualize', action='store_true',
                        help='Create visualizations')
+    
+    # Visualization options
+    parser.add_argument('--visualize_filters', action='store_true',
+                       help='Visualize learned frequency filters')
+    parser.add_argument('--visualize_features', action='store_true',
+                       help='Visualize feature maps (requires --image)')
+    parser.add_argument('--visualize_attention', action='store_true',
+                       help='Visualize frequency attention (requires --image)')
     
     # General
     parser.add_argument('--save_dir', type=str, default='./evaluation_results',
@@ -672,6 +949,13 @@ def main():
     model_config = checkpoint.get('model_config', {})
     img_size = model_config.get('img_size', 224)
     transform = get_test_transform(img_size)
+    
+    # Visualize filters if requested
+    if args.visualize_filters:
+        print("\n" + "="*60)
+        print("Visualizing Frequency Filters...")
+        print("="*60)
+        visualize_frequency_filters(model, Path(args.save_dir))
     
     # Execute based on mode
     if args.mode == 'evaluate':
@@ -715,6 +999,21 @@ def main():
             model, args.image, transform, device,
             visualize=args.visualize, save_path=save_path
         )
+        
+        # Additional visualizations
+        if args.visualize_features:
+            print("\n" + "="*60)
+            print("Visualizing Feature Maps...")
+            print("="*60)
+            visualize_feature_maps(model, args.image, transform, device, 
+                                  Path(args.save_dir))
+        
+        if args.visualize_attention:
+            print("\n" + "="*60)
+            print("Visualizing Frequency Attention...")
+            print("="*60)
+            visualize_attention_maps(model, args.image, transform, device,
+                                    Path(args.save_dir))
     
     elif args.mode == 'predict_dir':
         if not args.image_dir:
