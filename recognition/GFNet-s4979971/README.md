@@ -3,14 +3,14 @@
 ## Introduction
 GFNet is a frequency-domain neural architecture that replaces self-attention layer in traditional Vision Transformers (ViT) models with a global filter layer.  
 
-![Overall Architecture of the Global Filter Network](/PatternAnalysis-2025/recognition/GFNet-s4979971/images/GFNet_Archi.gif "Overall Architecture of the Global Filter Network")
+![Overall Architecture of the Global Filter Network](images/GFNet_Archi.gif "Overall Architecture of the Global Filter Network")
 
 There are three key operations in the Global Filter Layer, namely:
 1. 2D discrete Fourier transform to convert the input spatial features to the frequency domain
 2. Element - wise multiplication between frequency-domain features and the learnable global filter
 3. 2D inverse Fourier transform to map the features back to the spatial domain
 
-![Pseudocode of Global Filter Layer](/PatternAnalysis-2025/recognition/GFNet-s4979971/images/GFN_Pseudocode.png "Pseudocode of Global Filter Layer")
+![Pseudocode of Global Filter Layer](images/GFN_Pseudocode.png "Pseudocode of Global Filter Layer")
 
 In relation to other traditional Convolutional Neural Networks (CNN) and transformer-style models, GFNet has the following advantages:
 1. **Improved computational efficiency:** the total computational complexity is only O(NlogN) compared the quadratic complexity of ViT
