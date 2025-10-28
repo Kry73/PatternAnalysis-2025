@@ -204,7 +204,7 @@ def train_model(
     
     # Training options
     use_amp=True,  # Mixed precision training
-    early_stopping_patience=15,
+    early_stopping_patience=20,
     
     # Save options
     save_dir="./checkpoints",
@@ -283,7 +283,7 @@ def train_model(
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     
     # Early stopping
-    early_stopping = EarlyStopping(patience=early_stopping_patience, mode='min')
+    early_stopping = EarlyStopping(patience=early_stopping_patience, min_delta =0.001, mode='max')
     
     # Training history
     history = {
@@ -353,7 +353,7 @@ def train_model(
             }, save_dir / 'latest_checkpoint.pth')
         
         # Early stopping
-        early_stopping(val_metrics['loss'])
+        early_stopping(val_metrics['accuracy'])
         if early_stopping.early_stop:
             print(f"\nEarly stopping triggered at epoch {epoch+1}")
             break

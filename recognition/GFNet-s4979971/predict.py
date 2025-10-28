@@ -194,7 +194,7 @@ def evaluate_model(model, test_loader, device, save_dir=None):
             json.dump(results, f, indent=4)
         
         # Plot confusion matrix
-        plot_confusion_matrix(cm, save_dir / 'confusion_matrix.png')
+        plot_confusion_matrix(cm, save_dir / 'confusion_matrix_model.png')
         
         # Plot ROC curve
         plot_roc_curve(fpr, tpr, roc_auc, save_dir / 'roc_curve.png')
