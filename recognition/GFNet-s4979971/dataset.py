@@ -101,7 +101,7 @@ def get_data_loaders(data_dir, batch_size=32, img_size=224, num_workers=4):
 
 # Usage for GFNet
 if __name__ == "__main__":
-    train_loader, test_loader = get_gfnet_data_loaders(
+    train_loader, test_loader = get_data_loaders(
         data_dir="/home/groups/comp3710/ADNI/AD_NC",
         batch_size=32,
         img_size=224,
