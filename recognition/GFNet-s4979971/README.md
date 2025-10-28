@@ -26,6 +26,8 @@ Nevertheless, early diagnosis remains one of the current challenges in the field
 In this study, GFNet is adapted to the Alzheimer’s Disease Neuroimaging Initiative (ADNI) MRI dataset to classify subjects into Alzheimer’s Disease (AD), and Normal Control (NC) groups.
 
 ## File Structure
+
+'''
 recognition/
 └── GFNet-s4979971
     ├── dataset.py      # Data loader and preprocessing
@@ -33,7 +35,8 @@ recognition/
     ├── train.py        # Training, validation, testing pipeline
     ├── predict.py      # Example usage
     ├── README.md       # This file
-
+    ├── images          # Folder containing diagrams and visualisation
+'''
 
 ## Dependencies
 
@@ -59,6 +62,7 @@ This project uses the ADNI (Alzheimer's Disease Neuroimaging Initiative) dataset
 *Classes: 2 (AD, NC) - Well balanced at approximately 50/50
 
 ** Directory Structure **
+'''
 ADNI/
 ├── meta_data_with_label.json
 └── AD_NC/
@@ -68,6 +72,7 @@ ADNI/
     └── test/
         ├── AD/    # 4,460 images
         └── NC/    # 4,540 images
+'''
 
 ### dataset.py
 
