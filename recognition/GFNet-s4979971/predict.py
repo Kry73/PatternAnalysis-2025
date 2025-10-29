@@ -141,31 +141,7 @@ def load_model(checkpoint_path, device='cuda'):
 
 
 @torch.no_grad()
-def predict_batch(model, images, device):
-    """
-    Predict on a batch of images.
-    
-    Args:
-        model: Trained model
-        images: Batch of images [B, C, H, W]
-        device: Device to run prediction on
-    
-    Returns:
-        predictions: Class predictions [B]
-        probabilities: Class probabilities [B, num_classes]
-    """
-    model.eval()
-    images = images.to(device)
-    
-    outputs = model(images)
-    probabilities = F.softmax(outputs, dim=1)
-    predictions = torch.argmax(probabilities, dim=1)
-    
-    return predictions.cpu().numpy(), probabilities.cpu().numpy()
-
-
-@torch.no_grad()
-def evaluate_model(model, test_loader, device, save_dir=None):
+def evaluate_model(model, test_loader, device):
     """
     Comprehensive evaluation of the model.
     
@@ -173,12 +149,14 @@ def evaluate_model(model, test_loader, device, save_dir=None):
         model: Trained model
         test_loader: Test data loader
         device: Device to run on
-        save_dir: Directory to save results (optional)
     
     Returns:
         results: Dictionary containing all evaluation metrics
     """
     model.eval()
+
+    save_dir = Path('./evaluation_results')
+    save_dir.mkdir(parents=True, exist_ok=True)
     
     all_labels = []
     all_preds = []
@@ -272,29 +250,24 @@ def evaluate_model(model, test_loader, device, save_dir=None):
     print(f"  True NC, Pred NC: {cm[1, 1]}")
     print("="*60)
     
-    # Save results
-    if save_dir:
-        save_dir = Path(save_dir)
-        save_dir.mkdir(parents=True, exist_ok=True)
+    # Save metrics as JSON
+    with open(save_dir / 'test_results.json', 'w') as f:
+        json.dump(results, f, indent=4)
         
-        # Save metrics as JSON
-        with open(save_dir / 'test_results.json', 'w') as f:
-            json.dump(results, f, indent=4)
+    # Plot confusion matrix
+    plot_confusion_matrix(cm, save_dir / 'confusion_matrix_test.png')
         
-        # Plot confusion matrix
-        plot_confusion_matrix(cm, save_dir / 'confusion_matrix_test.png')
+    # Plot ROC curve
+    plot_roc_curve(fpr, tpr, roc_auc, save_dir / 'roc_curve_test.png')
         
-        # Plot ROC curve
-        plot_roc_curve(fpr, tpr, roc_auc, save_dir / 'roc_curve_test.png')
+    # Save classification report
+    class_names = ['AD', 'NC']
+    report = classification_report(all_labels, all_preds, target_names=class_names)
+    with open(save_dir / 'classification_report.txt', 'w') as f:
+        f.write(report)
+    print(f"  Classification report saved")
         
-        # Save classification report
-        class_names = ['AD', 'NC']
-        report = classification_report(all_labels, all_preds, target_names=class_names)
-        with open(save_dir / 'classification_report.txt', 'w') as f:
-            f.write(report)
-        print(f"  Classification report saved")
-        
-        print(f"\n✓ Results saved to: {save_dir}")
+    print(f"\n✓ Results saved to: {save_dir}")
     
     return results, all_labels, all_preds, all_probs
 
@@ -302,19 +275,22 @@ def evaluate_model(model, test_loader, device, save_dir=None):
 def plot_confusion_matrix(cm, save_path):
     """Plot and save confusion matrix."""
     plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+    sns.heatmap(cm, annot=False, fmt='d', cmap='Greens',
                 xticklabels=['AD', 'NC'], yticklabels=['AD', 'NC'],
                 cbar_kws={'label': 'Count'})
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
     plt.title('Confusion Matrix: Alzheimer\'s Detection (AD vs NC)')
     
-    # Add percentages
+    # Add percentages and label
     cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
+    labels = np.array([['TP', 'FN'],
+                   ['FP', 'TN']])
+
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
-            plt.text(j+0.5, i+0.7, f'({cm_percent[i, j]:.1f}%)',
-                    ha='center', va='center', fontsize=10, color='gray')
+            plt.text(j + 0.5, i + 0.5, f"{labels[i, j]}\n{cm_percent[i, j]:.1f}%",
+                 ha='center', va='center', fontsize=12, color='white' if cm[i, j] > cm.max() / 2 else 'black')
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=300)
@@ -341,273 +317,177 @@ def plot_roc_curve(fpr, tpr, roc_auc, save_path):
     print(f"  ROC curve saved to {save_path.name}")
 
 
-def visualize_frequency_filters(model, save_dir):
+def visualize_model_complete(model, test_loader, device, save_dir):
     """
-    Visualize all learned frequency filters in a single comprehensive image.
+    Create ONE comprehensive visualization combining:
+    - Frequency filters (learned weights)
+    - Feature maps (averaged across test set)
+    - Frequency attention (averaged across test set)
+    
+    No image path needed - uses the entire test set!
     
     Args:
-        model: Trained PyramidGFNet model
-        save_dir: Directory to save visualizations
+        model: Trained model
+        test_loader: Test data loader
+        device: Device to run on
+        save_dir: Directory to save visualization
     """
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     
-    print("\nVisualizing frequency filters...")
+    model.eval()
+    print("\nGenerating comprehensive model visualization...")
     
-    # Collect all filters
+    # ==================== COLLECT FILTERS (Model Weights) ====================
+    print("  Extracting frequency filters...")
     all_filters = []
-    stage_info = []
+    stage_names = []
     
     if hasattr(model, 'stages'):
-        # PyramidGFNet - collect from all stages
         for stage_idx in range(len(model.stages)):
             stage = model.stages[stage_idx]
-            for block_idx in range(len(stage.blocks)):
-                block = stage.blocks[block_idx]
-                
-                # Get complex weights from GlobalFilter
-                complex_weight = block.filter.complex_weight.detach().cpu()
-                weight = torch.view_as_complex(complex_weight)
-                magnitude = torch.abs(weight).numpy()
-                magnitude_avg = magnitude.mean(axis=-1)  # Average over channels
-                
-                all_filters.append(magnitude_avg)
-                stage_info.append((stage_idx + 1, block_idx + 1))
-    
-    elif hasattr(model, 'blocks'):
-        # Old GFNet - collect from all blocks
-        for block_idx in range(len(model.blocks)):
-            block = model.blocks[block_idx]
-            
+            block = stage.blocks[0]
             complex_weight = block.filter.complex_weight.detach().cpu()
             weight = torch.view_as_complex(complex_weight)
             magnitude = torch.abs(weight).numpy()
             magnitude_avg = magnitude.mean(axis=-1)
-            
             all_filters.append(magnitude_avg)
-            stage_info.append((1, block_idx + 1))
+            stage_names.append(f'Stage {stage_idx + 1}')
+    elif hasattr(model, 'blocks'):
+        for block_idx in range(min(4, len(model.blocks))):
+            block = model.blocks[block_idx]
+            complex_weight = block.filter.complex_weight.detach().cpu()
+            weight = torch.view_as_complex(complex_weight)
+            magnitude = torch.abs(weight).numpy()
+            magnitude_avg = magnitude.mean(axis=-1)
+            all_filters.append(magnitude_avg)
+            stage_names.append(f'Block {block_idx + 1}')
     
-    # Create comprehensive visualization
-    num_filters = len(all_filters)
-    cols = 4
-    rows = (num_filters + cols - 1) // cols
+    # ==================== COLLECT FEATURES & ATTENTION (Averaged) ====================
+    print("  Computing average feature maps and attention from test set...")
     
-    fig, axes = plt.subplots(rows, cols, figsize=(16, 4*rows))
-    if rows == 1:
-        axes = axes.reshape(1, -1)
-    axes = axes.flatten()
+    all_features_sum = []
+    all_attention_sum = []
+    sample_count = 0
+    max_samples = 50  # Average over first 50 samples for speed
     
-    for idx, (filter_mag, (stage, block)) in enumerate(zip(all_filters, stage_info)):
-        im = axes[idx].imshow(filter_mag, cmap='viridis', aspect='auto')
-        if hasattr(model, 'stages'):
-            axes[idx].set_title(f'Stage {stage}, Block {block}', fontsize=10, fontweight='bold')
-        else:
-            axes[idx].set_title(f'Block {block}', fontsize=10, fontweight='bold')
-        axes[idx].set_xlabel('Freq (width)', fontsize=8)
-        axes[idx].set_ylabel('Freq (height)', fontsize=8)
-        plt.colorbar(im, ax=axes[idx], fraction=0.046, pad=0.04)
-    
-    # Hide unused subplots
-    for idx in range(num_filters, len(axes)):
-        axes[idx].axis('off')
-    
-    plt.suptitle('Learned Frequency Filters (All Stages & Blocks)', 
-                fontsize=16, fontweight='bold', y=0.995)
-    plt.tight_layout(rect=[0, 0, 1, 0.99])
-    plt.savefig(save_dir / 'all_frequency_filters.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    print(f"✓ All filters saved to: {save_dir / 'all_frequency_filters.png'} ({num_filters} filters)")
-
-
-def visualize_feature_maps(model, image_path, transform, device, save_dir):
-    """
-    Visualize all intermediate feature maps in a single comprehensive image.
-    
-    Args:
-        model: Trained model
-        image_path: Path to input image
-        transform: Transform pipeline
-        device: Device to run on
-        save_dir: Directory to save visualizations
-    """
-    save_dir = Path(save_dir)
-    save_dir.mkdir(parents=True, exist_ok=True)
-    
-    model.eval()
-    
-    # Load image
-    image = Image.open(image_path).convert('L')
-    image_tensor = transform(image).unsqueeze(0).to(device)
-    
-    print(f"\nVisualizing feature maps for: {Path(image_path).name}")
-    
-    all_features = []
-    stage_info = []
-    
-    # Get intermediate features
-    with torch.no_grad():
-        if hasattr(model, 'stages'):
-            # PyramidGFNet
-            x, (H, W) = model.patch_embed1(image_tensor)
-            x = x + model.pos_embed1
-            x = model.pos_drop(x)
-            
-            # Process through each stage
-            for stage_idx in range(len(model.stages)):
-                x = model.stages[stage_idx](x, H, W)
-                
-                # Get features
-                B, N, C = x.shape
-                x_grid = x[0].reshape(H, W, C)[:, :, :8].permute(2, 0, 1)  # First 8 channels
-                
-                for ch in range(min(8, C)):
-                    all_features.append(x_grid[ch].cpu().numpy())
-                    stage_info.append((stage_idx + 1, ch + 1, H, W, C))
-                
-                # Merge for next stage
-                if stage_idx < len(model.merges):
-                    x, H, W = model.merges[stage_idx](x, H, W)
-        
-        else:
-            # Old GFNet
-            x, (H, W) = model.patch_embed(image_tensor)
-            x = x + model.pos_embed
-            
-            # Process through blocks
-            for block in model.blocks[:4]:
-                x = block(x, spatial_size=(H, W))
-            
-            B, N, C = x.shape
-            x_grid = x[0].reshape(H, W, C)[:, :, :16].permute(2, 0, 1)
-            
-            for ch in range(min(16, C)):
-                all_features.append(x_grid[ch].cpu().numpy())
-                stage_info.append((1, ch + 1, H, W, C))
-    
-    # Create comprehensive visualization
-    num_features = len(all_features)
-    cols = 8
-    rows = (num_features + cols - 1) // cols
-    
-    fig, axes = plt.subplots(rows, cols, figsize=(20, 2.5*rows))
-    if rows == 1:
-        axes = axes.reshape(1, -1)
-    axes = axes.flatten()
-    
-    for idx, (feat, (stage, ch, h, w, total_ch)) in enumerate(zip(all_features, stage_info)):
-        axes[idx].imshow(feat, cmap='viridis')
-        axes[idx].axis('off')
-        if hasattr(model, 'stages'):
-            axes[idx].set_title(f'S{stage}C{ch}\n{h}×{w}', fontsize=8)
-        else:
-            axes[idx].set_title(f'Ch{ch}\n{h}×{w}', fontsize=8)
-    
-    # Hide unused subplots
-    for idx in range(num_features, len(axes)):
-        axes[idx].axis('off')
-    
-    plt.suptitle(f'Feature Maps (All Stages) - {Path(image_path).name}', 
-                fontsize=16, fontweight='bold', y=0.998)
-    plt.tight_layout(rect=[0, 0, 1, 0.99])
-    plt.savefig(save_dir / 'all_feature_maps.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    print(f"✓ All feature maps saved to: {save_dir / 'all_feature_maps.png'} ({num_features} channels)")
-
-
-def visualize_attention_maps(model, image_path, transform, device, save_dir):
-    """
-    Visualize frequency domain attention in a single comprehensive image.
-    
-    Args:
-        model: Trained model
-        image_path: Path to input image
-        transform: Transform pipeline
-        device: Device to run on
-        save_dir: Directory to save visualizations
-    """
-    save_dir = Path(save_dir)
-    save_dir.mkdir(parents=True, exist_ok=True)
-    
-    model.eval()
-    
-    # Load image
-    image = Image.open(image_path).convert('L')
-    image_tensor = transform(image).unsqueeze(0).to(device)
-    
-    print(f"\nVisualizing frequency attention for: {Path(image_path).name}")
-    
-    # Hook to capture frequency domain features
+    # Hook to capture frequency attention
     freq_features = []
-    stage_ids = []
     
-    def make_hook_fn(stage_id):
-        def hook_fn(module, input, output):
-            x = input[0]
-            B, N, C = x.shape
-            a = b = int(np.sqrt(N))
-            x_reshaped = x.view(B, a, b, C)
-            x_fft = torch.fft.rfft2(x_reshaped, dim=(1, 2), norm='ortho')
-            freq_features.append(torch.abs(x_fft).detach().cpu())
-            stage_ids.append(stage_id)
-        return hook_fn
+    def hook_fn(module, input, output):
+        x = input[0]
+        B, N, C = x.shape
+        a = b = int(np.sqrt(N))
+        x_reshaped = x.view(B, a, b, C)
+        x_fft = torch.fft.rfft2(x_reshaped, dim=(1, 2), norm='ortho')
+        freq_features.append(torch.abs(x_fft).detach().cpu())
     
     # Register hooks
     hooks = []
     if hasattr(model, 'stages'):
-        for stage_idx, stage in enumerate(model.stages):
-            hook = stage.blocks[0].filter.register_forward_hook(make_hook_fn(stage_idx + 1))
+        for stage_idx in range(len(model.stages)):
+            hook = model.stages[stage_idx].blocks[0].filter.register_forward_hook(hook_fn)
             hooks.append(hook)
     elif hasattr(model, 'blocks'):
-        for block_idx in range(min(8, len(model.blocks))):
-            hook = model.blocks[block_idx].filter.register_forward_hook(make_hook_fn(block_idx + 1))
+        for block_idx in range(min(4, len(model.blocks))):
+            hook = model.blocks[block_idx].filter.register_forward_hook(hook_fn)
             hooks.append(hook)
     
-    # Forward pass
     with torch.no_grad():
-        _ = model(image_tensor)
+        for batch_idx, (images, labels) in enumerate(test_loader):
+            if sample_count >= max_samples:
+                break
+            
+            images = images.to(device)
+            freq_features.clear()
+            
+            # Get features at each stage
+            if hasattr(model, 'stages'):
+                x, (H, W) = model.patch_embed1(images)
+                x = x + model.pos_embed1
+                x = model.pos_drop(x)
+                
+                for stage_idx in range(len(model.stages)):
+                    x = model.stages[stage_idx](x, H, W)
+                    
+                    # Extract spatial features (first channel, averaged over batch)
+                    B, N, C = x.shape
+                    x_grid = x.reshape(B, H, W, C)[:, :, :, 0].cpu().numpy()
+                    x_avg = x_grid.mean(axis=0)
+                    
+                    if len(all_features_sum) <= stage_idx:
+                        all_features_sum.append(x_avg)
+                    else:
+                        all_features_sum[stage_idx] += x_avg
+                    
+                    # Merge for next stage
+                    if stage_idx < len(model.merges):
+                        x, H, W = model.merges[stage_idx](x, H, W)
+            
+            # Forward pass triggers hooks
+            _ = model(images)
+            
+            # Accumulate attention
+            for stage_idx, freq_feat in enumerate(freq_features):
+                freq_magnitude = freq_feat.mean(dim=0).mean(dim=-1).numpy()
+                
+                if len(all_attention_sum) <= stage_idx:
+                    all_attention_sum.append(freq_magnitude)
+                else:
+                    all_attention_sum[stage_idx] += freq_magnitude
+            
+            sample_count += images.size(0)
     
     # Remove hooks
     for hook in hooks:
         hook.remove()
     
-    # Create comprehensive visualization
-    num_stages = len(freq_features)
-    cols = min(4, num_stages)
-    rows = (num_stages + cols - 1) // cols
+    # Average the accumulated features and attention
+    all_features_avg = [f / (sample_count / test_loader.batch_size) for f in all_features_sum]
+    all_attention_avg = [a / (sample_count / test_loader.batch_size) for a in all_attention_sum]
     
-    fig, axes = plt.subplots(rows, cols, figsize=(5*cols, 4*rows))
-    if num_stages == 1:
-        axes = [axes]
-    else:
-        axes = axes.flatten()
+    print(f"  Averaged over {sample_count} samples")
     
-    for idx, (freq_feat, stage_id) in enumerate(zip(freq_features, stage_ids)):
-        # Average over batch and channels
-        freq_magnitude = freq_feat[0].mean(dim=-1).numpy()
-        
-        im = axes[idx].imshow(freq_magnitude, cmap='hot', aspect='auto')
-        if hasattr(model, 'stages'):
-            axes[idx].set_title(f'Stage {stage_id}\nFreq Attention', fontsize=11, fontweight='bold')
-        else:
-            axes[idx].set_title(f'Block {stage_id}\nFreq Attention', fontsize=11, fontweight='bold')
-        axes[idx].set_xlabel('Frequency (width)', fontsize=9)
-        axes[idx].set_ylabel('Frequency (height)', fontsize=9)
-        plt.colorbar(im, ax=axes[idx], fraction=0.046, pad=0.04)
+    # ==================== CREATE COMBINED PLOT ====================
+    num_stages = len(all_filters)
+    fig = plt.figure(figsize=(5 * num_stages, 12))
+    gs = fig.add_gridspec(3, num_stages, hspace=0.3, wspace=0.3)
     
-    # Hide unused subplots
-    for idx in range(num_stages, len(axes) if num_stages > 1 else 1):
-        if num_stages > 1:
-            axes[idx].axis('off')
+    # Row 1: Frequency Filters
+    for i in range(num_stages):
+        ax = fig.add_subplot(gs[0, i])
+        im = ax.imshow(all_filters[i], cmap='viridis', aspect='auto')
+        ax.set_title(f'{stage_names[i]}\nLearned Filter', fontsize=10, fontweight='bold')
+        ax.set_xlabel('Frequency (Width)', fontsize=9)
+        ax.set_ylabel('Frequency (Height)', fontsize=9)
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     
-    plt.suptitle(f'Frequency Domain Attention Maps - {Path(image_path).name}', 
-                fontsize=16, fontweight='bold', y=0.995)
-    plt.tight_layout(rect=[0, 0, 1, 0.99])
-    plt.savefig(save_dir / 'all_frequency_attention.png', dpi=300, bbox_inches='tight')
+    # Row 2: Average Feature Maps
+    for i in range(min(num_stages, len(all_features_avg))):
+        ax = fig.add_subplot(gs[1, i])
+        im = ax.imshow(all_features_avg[i], cmap='viridis')
+        ax.set_title(f'{stage_names[i]}\nAvg Features', fontsize=10, fontweight='bold')
+        ax.axis('off')
+    
+    # Row 3: Average Frequency Attention
+    for i in range(min(num_stages, len(all_attention_avg))):
+        ax = fig.add_subplot(gs[2, i])
+        im = ax.imshow(all_attention_avg[i], cmap='hot', aspect='auto')
+        ax.set_title(f'{stage_names[i]}\nAvg Attention', fontsize=10, fontweight='bold')
+        ax.set_xlabel('Frequency (Width)', fontsize=9)
+        ax.set_ylabel('Frequency (Height)', fontsize=9)
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    
+    plt.suptitle(f'Complete Model Analysis (Averaged over {sample_count} test samples)', 
+                 fontsize=16, fontweight='bold', y=0.995)
+    
+    # Save
+    save_path = save_dir / 'model_complete_analysis.png'
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✓ Frequency attention saved to: {save_dir / 'all_frequency_attention.png'} ({num_stages} stages)")
+    print(f"✓ Complete model visualization saved: {save_path}")
+    return str(save_path)
 
 
 def analyze_misclassifications(model, test_loader, device, save_dir, num_samples=10):
@@ -686,250 +566,34 @@ def analyze_misclassifications(model, test_loader, device, save_dir, num_samples
     print(f"✓ Misclassification analysis saved to {save_dir}")
 
 
-@torch.no_grad()
-def predict_single_image(model, image_path, transform, device, visualize=True, save_path=None):
-    """
-    Predict on a single image and optionally visualize.
-    
-    Args:
-        model: Trained model
-        image_path: Path to image file
-        transform: Transform pipeline
-        device: Device to run on
-        visualize: Whether to create visualization
-        save_path: Path to save visualization
-    
-    Returns:
-        Dictionary with prediction results
-    """
-    model.eval()
-    
-    # Load and preprocess image
-    image = Image.open(image_path).convert('L')
-    image_tensor = transform(image).unsqueeze(0).to(device)
-    
-    # Predict
-    outputs = model(image_tensor)
-    probs = F.softmax(outputs, dim=1)
-    pred_class = torch.argmax(probs, dim=1).item()
-    confidence = probs[0, pred_class].item()
-    
-    class_names = ['AD (Alzheimer\'s Disease)', 'NC (Normal Control)']
-    results = {
-        'predicted_class': pred_class,
-        'predicted_label': class_names[pred_class],
-        'confidence': confidence,
-        'probabilities': {
-            'AD': probs[0, 0].item(),
-            'NC': probs[0, 1].item()
-        },
-        'image_path': str(image_path)
-    }
-    
-    # Print results
-    print(f"\nImage: {Path(image_path).name}")
-    print(f"Prediction: {results['predicted_label']}")
-    print(f"Confidence: {results['confidence']:.2%}")
-    print(f"Probabilities:")
-    print(f"  AD: {results['probabilities']['AD']:.2%}")
-    print(f"  NC: {results['probabilities']['NC']:.2%}")
-    
-    # Visualize
-    if visualize:
-        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-        
-        # Show image
-        axes[0].imshow(image, cmap='gray')
-        axes[0].axis('off')
-        axes[0].set_title(f"Input MRI Scan\n{Path(image_path).name}", fontsize=12)
-        
-        # Show predictions
-        classes = ['AD', 'NC']
-        probs_list = [results['probabilities']['AD'], results['probabilities']['NC']]
-        colors = ['#e74c3c', '#2ecc71']
-        
-        bars = axes[1].barh(classes, probs_list, color=colors, alpha=0.7)
-        axes[1].set_xlim(0, 1)
-        axes[1].set_xlabel('Probability', fontsize=11)
-        axes[1].set_title('Prediction Probabilities', fontsize=12)
-        axes[1].grid(axis='x', alpha=0.3)
-        
-        # Add probability labels
-        for bar, prob in zip(bars, probs_list):
-            axes[1].text(prob + 0.02, bar.get_y() + bar.get_height()/2,
-                        f'{prob:.2%}', va='center', fontsize=10)
-        
-        # Add prediction text
-        pred_text = (f"Prediction: {results['predicted_label']}\n"
-                    f"Confidence: {results['confidence']:.2%}")
-        fig.text(0.5, 0.02, pred_text, ha='center', fontsize=12,
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-        
-        plt.tight_layout(rect=[0, 0.05, 1, 1])
-        
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"✓ Visualization saved to: {save_path}")
-        else:
-            plt.show()
-        
-        plt.close()
-    
-    return results
-
-
-@torch.no_grad()
-def predict_directory(model, image_dir, transform, device, save_dir):
-    """
-    Predict on all images in a directory.
-    
-    Args:
-        model: Trained model
-        image_dir: Directory containing images
-        transform: Transform pipeline
-        device: Device to run on
-        save_dir: Directory to save results
-    """
-    model.eval()
-    image_dir = Path(image_dir)
-    save_dir = Path(save_dir)
-    save_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Find all images
-    image_paths = []
-    for ext in ['*.png', '*.jpg', '*.jpeg', '*.nii*']:
-        image_paths.extend(image_dir.glob(ext))
-    
-    if not image_paths:
-        print(f"No images found in {image_dir}")
-        return
-    
-    print(f"\nFound {len(image_paths)} images")
-    
-    # Predict all images
-    all_results = []
-    for img_path in tqdm(image_paths, desc="Predicting"):
-        try:
-            image = Image.open(img_path).convert('L')
-            image_tensor = transform(image).unsqueeze(0).to(device)
-            
-            outputs = model(image_tensor)
-            probs = F.softmax(outputs, dim=1)
-            pred_class = torch.argmax(probs, dim=1).item()
-            
-            results = {
-                'image_path': str(img_path.name),
-                'predicted_class': pred_class,
-                'predicted_label': 'AD' if pred_class == 0 else 'NC',
-                'confidence': probs[0, pred_class].item(),
-                'prob_AD': probs[0, 0].item(),
-                'prob_NC': probs[0, 1].item()
-            }
-            all_results.append(results)
-        except Exception as e:
-            print(f"Error processing {img_path.name}: {e}")
-    
-    # Save results
-    with open(save_dir / 'predictions.json', 'w') as f:
-        json.dump(all_results, f, indent=4)
-    
-    # Generate summary
-    total = len(all_results)
-    ad_count = sum(1 for r in all_results if r['predicted_class'] == 0)
-    nc_count = sum(1 for r in all_results if r['predicted_class'] == 1)
-    avg_conf = np.mean([r['confidence'] for r in all_results])
-    
-    summary = {
-        'total_images': total,
-        'predictions': {
-            'AD': ad_count,
-            'NC': nc_count
-        },
-        'percentages': {
-            'AD': f"{ad_count/total*100:.1f}%",
-            'NC': f"{nc_count/total*100:.1f}%"
-        },
-        'average_confidence': f"{avg_conf:.2%}"
-    }
-    
-    with open(save_dir / 'summary.json', 'w') as f:
-        json.dump(summary, f, indent=4)
-    
-    # Print summary
-    print("\n" + "="*60)
-    print("PREDICTION SUMMARY")
-    print("="*60)
-    print(f"Total images:      {total}")
-    print(f"AD predictions:    {ad_count} ({ad_count/total*100:.1f}%)")
-    print(f"NC predictions:    {nc_count} ({nc_count/total*100:.1f}%)")
-    print(f"Avg confidence:    {avg_conf:.2%}")
-    print("="*60)
-    
-    # Create summary plot
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    
-    # Prediction distribution
-    axes[0].pie([ad_count, nc_count],
-               labels=['AD', 'NC'],
-               colors=['#e74c3c', '#2ecc71'],
-               autopct='%1.1f%%',
-               startangle=90)
-    axes[0].set_title('Prediction Distribution', fontsize=12)
-    
-    # Confidence distribution
-    confidences = [r['confidence'] for r in all_results]
-    axes[1].hist(confidences, bins=20, color='skyblue', edgecolor='black', alpha=0.7)
-    axes[1].set_xlabel('Confidence', fontsize=11)
-    axes[1].set_ylabel('Count', fontsize=11)
-    axes[1].set_title('Confidence Distribution', fontsize=12)
-    axes[1].grid(axis='y', alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(save_dir / 'summary_plot.png', dpi=300)
-    plt.close()
-    
-    print(f"\n✓ All results saved to: {save_dir}")
-
-
 def main():
     """Main evaluation and prediction pipeline."""
     import argparse
     
-    parser = argparse.ArgumentParser(description='Pyramid GFNet Alzheimer\'s Detection - Prediction & Evaluation')
-    parser.add_argument('--checkpoint', type=str, default='./checkpoints_pyramid/best_model.pth',
+    parser = argparse.ArgumentParser(description='Pyramid GFNet Alzheimer\'s Detection - Evaluation')
+    parser.add_argument('--checkpoint', type=str, default='./checkpoints/best_model.pth',
                        help='Path to model checkpoint')
-    parser.add_argument('--mode', type=str, default='evaluate', choices=['evaluate', 'predict_single', 'predict_dir'],
-                       help='Operation mode')
-    
-    # For evaluation mode
     parser.add_argument('--data_dir', type=str, default='/home/groups/comp3710/ADNI/AD_NC',
-                       help='Path to dataset (for evaluation)')
-    parser.add_argument('--batch_size', type=int, default=32,
+                       help='Path to dataset')
+    parser.add_argument('--batch_size', type=int, default=16,
                        help='Batch size for evaluation')
-    parser.add_argument('--analyze_errors', action='store_true',
-                       help='Analyze misclassified samples')
-    
-    # For prediction modes
-    parser.add_argument('--image', type=str, default=None,
-                       help='Path to single image (for predict_single)')
-    parser.add_argument('--image_dir', type=str, default=None,
-                       help='Path to image directory (for predict_dir)')
-    parser.add_argument('--visualize', action='store_true',
-                       help='Create visualizations')
-    
-    # Visualization options
-    parser.add_argument('--visualize_filters', action='store_true',
-                       help='Visualize learned frequency filters')
-    parser.add_argument('--visualize_features', action='store_true',
-                       help='Visualize feature maps (requires --image)')
-    parser.add_argument('--visualize_attention', action='store_true',
-                       help='Visualize frequency attention (requires --image)')
-    
-    # General
     parser.add_argument('--save_dir', type=str, default='./evaluation_results',
                        help='Directory to save results')
     
+    # Visualization options
+    parser.add_argument('--visualize_model', action='store_true',
+                       help='Generate complete model visualization (filters + features + attention)')
+    parser.add_argument('--analyze_errors', action='store_true',
+                       help='Analyze misclassified samples')
+    parser.add_argument('--visualize_all', action='store_true',
+                       help='Generate ALL visualizations')
+    
     args = parser.parse_args()
+
+    # If --visualize_all, enable everything
+    if args.visualize_all:
+        args.visualize_model = True
+        args.analyze_errors = True
     
     # Setup
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -937,7 +601,6 @@ def main():
     print("🧠 Pyramid GFNet - Alzheimer's Detection")
     print("="*60)
     print(f"Device: {device}")
-    print(f"Mode: {args.mode}")
     
     # Load model
     print("\n" + "="*60)
@@ -948,89 +611,52 @@ def main():
     # Get model config for transform
     model_config = checkpoint.get('model_config', {})
     img_size = model_config.get('img_size', 224)
-    transform = get_test_transform(img_size)
     
-    # Visualize filters if requested
-    if args.visualize_filters:
-        print("\n" + "="*60)
-        print("Visualizing Frequency Filters...")
-        print("="*60)
-        visualize_frequency_filters(model, Path(args.save_dir))
+    # Load test data
+    print("\n" + "="*60)
+    print("Loading Test Data...")
+    print("="*60)
+    _, test_loader = get_data_loaders(
+        data_dir=args.data_dir,
+        batch_size=args.batch_size,
+        img_size=img_size,
+        num_workers=4
+    )
     
-    # Execute based on mode
-    if args.mode == 'evaluate':
-        # Load test data
-        print("\n" + "="*60)
-        print("Loading Test Data...")
-        print("="*60)
-        _, test_loader = get_data_loaders(
-            data_dir=args.data_dir,
-            batch_size=args.batch_size,
-            img_size=img_size,
-            num_workers=4
-        )
-        
-        # Evaluate
-        results, labels, preds, probs = evaluate_model(
-            model, test_loader, device, save_dir=args.save_dir
-        )
-        
-        # Analyze misclassifications
-        if args.analyze_errors:
-            print("\n" + "="*60)
-            print("Analyzing Misclassifications...")
-            print("="*60)
-            analyze_misclassifications(
-                model, test_loader, device, 
-                save_dir=Path(args.save_dir) / 'misclassifications'
-            )
+    # Evaluate
+    results, labels, preds, probs = evaluate_model(
+        model, test_loader, device
+    )
     
-    elif args.mode == 'predict_single':
-        if not args.image:
-            print("Error: --image required for predict_single mode")
-            return
-        
+    # Complete model visualization (auto-combined - no image path needed!)
+    if args.visualize_model:
         print("\n" + "="*60)
-        print("Single Image Prediction")
+        print("Creating Complete Model Visualization...")
         print("="*60)
-        
-        save_path = Path(args.save_dir) / 'prediction_visualization.png' if args.visualize else None
-        results = predict_single_image(
-            model, args.image, transform, device,
-            visualize=args.visualize, save_path=save_path
-        )
-        
-        # Additional visualizations
-        if args.visualize_features:
-            print("\n" + "="*60)
-            print("Visualizing Feature Maps...")
-            print("="*60)
-            visualize_feature_maps(model, args.image, transform, device, 
-                                  Path(args.save_dir))
-        
-        if args.visualize_attention:
-            print("\n" + "="*60)
-            print("Visualizing Frequency Attention...")
-            print("="*60)
-            visualize_attention_maps(model, args.image, transform, device,
-                                    Path(args.save_dir))
+        visualize_model_complete(model, test_loader, device, Path(args.save_dir))
     
-    elif args.mode == 'predict_dir':
-        if not args.image_dir:
-            print("Error: --image_dir required for predict_dir mode")
-            return
-        
+    # Analyze misclassifications
+    if args.analyze_errors:
         print("\n" + "="*60)
-        print("Directory Prediction")
+        print("Analyzing Misclassifications...")
         print("="*60)
-        
-        predict_directory(
-            model, args.image_dir, transform, device, args.save_dir
+        analyze_misclassifications(
+            model, test_loader, device, 
+            save_dir=Path(args.save_dir)
         )
     
     print("\n" + "="*60)
     print("✓ Complete!")
     print("="*60)
+    print(f"\nGenerated files in {args.save_dir}:")
+    print("  - test_results.json")
+    print("  - confusion_matrix_test.png")
+    print("  - roc_curve_test.png")
+    print("  - classification_report.txt")
+    if args.visualize_model:
+        print("  - model_complete_analysis.png")
+    if args.analyze_errors:
+        print("  - misclassified_samples.png")
 
 
 if __name__ == "__main__":

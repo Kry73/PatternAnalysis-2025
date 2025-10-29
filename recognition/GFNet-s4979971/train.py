@@ -39,6 +39,45 @@ class EarlyStopping:
             self.best_score = score
             self.counter = 0
 
+def mixup_data(x, y, alpha=0.3, device='cuda'):
+    """
+    Apply mixup augmentation to a batch.
+    
+    Args:
+        x: Input images [batch_size, channels, height, width]
+        y: Labels [batch_size]
+        alpha: Mixup hyperparameter (0.3 is good for medical imaging)
+        device: Device to use
+    
+    Returns:
+        mixed_x: Mixed images
+        y_a, y_b: Original labels for the two mixed samples
+        lam: Mixing coefficient
+    """
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1
+    
+    batch_size = x.size()[0]
+    index = torch.randperm(batch_size).to(device)
+    
+    # Mix images: mixed = lam * image_a + (1 - lam) * image_b
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    
+    # Keep both labels
+    y_a, y_b = y, y[index]
+    
+    return mixed_x, y_a, y_b, lam
+
+
+def mixup_criterion(criterion, pred, y_a, y_b, lam):
+    """
+    Compute loss for mixup.
+    
+    Loss = lam * loss(pred, y_a) + (1 - lam) * loss(pred, y_b)
+    """
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 def calculate_metrics(y_true, y_pred, y_prob=None):
     """Calculate comprehensive metrics for binary classification."""
@@ -77,23 +116,27 @@ def plot_confusion_matrix(y_true, y_pred, save_path, class_names=['AD', 'NC']):
     """Plot and save confusion matrix for AD vs NC."""
     cm = confusion_matrix(y_true, y_pred)
     plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+    sns.heatmap(cm, annot=False, fmt='d', cmap='Greens', 
                 xticklabels=class_names, yticklabels=class_names,
                 cbar_kws={'label': 'Count'})
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
     plt.title('Confusion Matrix: Alzheimer\'s Detection (AD vs NC)')
     
-    # Add percentage annotations
+    # Add percentages and labels
     cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
+    labels = np.array([['TP', 'FN'],
+                   ['FP', 'TN']])
+
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
-            plt.text(j+0.5, i+0.7, f'({cm_percent[i, j]:.1f}%)', 
-                    ha='center', va='center', fontsize=10, color='gray')
+            plt.text(j + 0.5, i + 0.5, f"{labels[i, j]}\n{cm_percent[i, j]:.1f}%",
+                 ha='center', va='center', fontsize=12, color='white' if cm[i, j] > cm.max() / 2 else 'black')
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=300)
     plt.close()
+    print(f"✓ Confusion matrix saved to: {save_path}")
 
 
 def plot_roc_curve(y_true, y_prob, save_path):
@@ -112,6 +155,7 @@ def plot_roc_curve(y_true, y_prob, save_path):
     plt.tight_layout()
     plt.savefig(save_path, dpi=300)
     plt.close()
+    print(f"✓ ROC Graph saved to: {save_path}")
 
 
 def train_epoch(model, train_loader, criterion, optimizer, scheduler, device, use_amp=True):
@@ -521,13 +565,13 @@ def train_model(
     
     # Plot confusion matrix
     plot_confusion_matrix(final_labels, final_preds, 
-                         save_dir / 'confusion_matrix_final.png',
+                         save_dir / 'confusion_matrix_train.png',
                          class_names=['AD', 'NC'])
     
     # Plot ROC curve
     if final_metrics['auc']:
         plot_roc_curve(final_labels, final_probs, 
-                      save_dir / 'roc_curve_final.png')
+                      save_dir / 'roc_curve_train.png')
     
     # Save final metrics
     final_report = {
@@ -562,11 +606,15 @@ if __name__ == "__main__":
     print("="*60)
     
     model, history, metrics = train_model(
-        model_size='small',  # Change to 'tiny' or 'base' as needed
+        model_size='small',  
+        drop_rate=0.35,                  
+        drop_path_rate=0.4,
         img_size=224,
-        batch_size=16,
-        num_epochs=100,
-        learning_rate=1e-4,
+        batch_size=24,
+        num_epochs=200,
+        learning_rate=8e-5,
+        weight_decay=0.12,               
+        warmup_epochs=20,              
         early_stopping_patience=20,
         use_amp=True
     )
