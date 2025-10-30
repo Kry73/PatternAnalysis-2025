@@ -163,15 +163,92 @@ In this implementation, PGFNet architecture is implemented in three main variant
 ## Training and Evaluation
 
 ## Results
+⚠️ Note: Results are not fully reproducible due to missing random seed control. Running the same training may produce results varying by ±1-3%.
 
 ## Usage
-### Installation
-
 ### Dependencies
+```ruby
+# Deep Learning Framework
+torch>=1.8.0              # Required for torch.fft (rfft2/irfft2)
+torchvision>=0.15.0
 
-### Reproducibility
+# Model Components
+timm>=0.9.0               # PyTorch Image Models (for DropPath)
 
-### Test Script
+# Numerical & Image Processing
+numpy>=1.24.0
+Pillow>=9.0.0             # PIL for image loading
+
+# Data Analysis
+pandas>=1.5.0             # For CSV handling and predictions
+
+# Visualization & Metrics
+matplotlib>=3.7.0
+seaborn>=0.12.0           # Enhanced plotting for confusion matrices
+scikit-learn>=1.2.0       # Metrics and evaluation
+
+# Progress & Utilities
+tqdm>=4.65.0              # Progress bars
+
+# Standard Library (Built-in)
+os, pathlib, collections, functools, json, math, warnings, random
+```
+
+### Training
+**Basic usage**
+```
+python train.py
+```
+**Custom parameters**\
+Modify the default parameter
+```
+# Model parameters
+model_size='small'              # Options: 'tiny', 'small', 'base'
+drop_rate=0.1
+drop_path_rate=0.15
+
+# Training parameters
+img_size=224
+batch_size=24
+num_epochs=250
+learning_rate=1e-4
+min_lr=1e-7
+weight_decay=0.05
+warmup_epochs=10
+
+# Early stopping
+early_stopping_patience=25
+min_delta=0.001
+
+# Augmentation
+use_mixup=True
+mixup_alpha=0.2
+
+# Options
+use_amp=True                    # Automatic Mixed Precision
+use_class_weights=False
+
+# Data
+data_dir="/home/groups/comp3710/ADNI/AD_NC"
+num_workers=4
+
+# Save
+save_dir="./checkpoints_scan_level"
+```
+
+### Evaluation
+**Basic usage**
+```
+python predict.py
+```
+**Custom parameters**
+```
+python evaluate.py \
+  --checkpoint ./models/my_best_model.pth \
+  --data_dir /path/to/your/data \
+  --batch_size 32 \
+  --save_dir ./my_results
+```
 
 ## File Structure
 
@@ -180,21 +257,21 @@ recognition/
 └── GFNet-s4979971
     ├── dataset.py      # Data loader and preprocessing
     ├── modules.py      # Model components (GFBlock, GlobalFilter, GFNet)
-    ├── train.py        # Training, validation, testing pipeline
-    ├── predict.py      # Example usage
+    ├── train.py        # Training and validation
+    ├── predict.py      # Evaluating the accuracy of a given model
     ├── README.md       # This file
     ├── images          # Folder containing diagrams and visualisation
 ```
 
 ## References - TBC
-Barkhof, F., Hazewinkel, M., Binnewijzend, M., & Smithuis, R. (2022, March 3). Dementia - role of MRI. Radiology Assistant. https://radiologyassistant.nl/neuroradiology/dementia/role-of-mri 
-Islam, T., Hafiz, Md. S., Jim, J. R., Kabir, Md. M., & Mridha, M. F. (2024, June 5). Https://www.sciencedirect.com/science/article/abs/pii/S1047847720300046?via=ihub. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
-Johnson, K. A., Fox, N. C., Sperling, R. A., & Klunk, W. E. (2012, April). Brain Imaging in alzheimer disease. Cold Spring Harbor perspectives in medicine. https://pmc.ncbi.nlm.nih.gov/articles/PMC3312396 
-Krishnapriya, S., & Karuna, Y. (2023, April 20). Pre-trained deep learning models for brain MRI image classification. Frontiers in human neuroscience. https://pmc.ncbi.nlm.nih.gov/articles/PMC10157370/ 
-Mayo Foundation for Medical Education and Research. (2024, November 8). Alzheimer’s disease. Mayo Clinic. https://www.mayoclinic.org/diseases-conditions/alzheimers-disease/symptoms-causes/syc-20350447 
-Rao, Y., Zhao, W., Zhu, Z., Lu, J., & Zhou, J. (2021, October 26). Global Filter Networks for Image Classification. arXiv.org. https://arxiv.org/abs/2107.00645 
-Safdar, M. F., Alkobaisi, S. S., & Zahra, F. T. (2020, March). A comparative analysis of data augmentation approaches for Magnetic Resonance Imaging (MRI) scan images of brain tumor. PubMed Central. https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/ 
-Zhang, K., Wang,  eidong, Cui, Y., LV, Z., & Fan, Y. (2024, January). GFNet: A pioneering approach for precisely estimating ash content in coal through the fusion of graph convolution and feedforward network. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
+1. Barkhof, F., Hazewinkel, M., Binnewijzend, M., & Smithuis, R. (2022, March 3). Dementia - role of MRI. Radiology Assistant. https://radiologyassistant.nl/neuroradiology/dementia/role-of-mri 
+2. Islam, T., Hafiz, Md. S., Jim, J. R., Kabir, Md. M., & Mridha, M. F. (2024, June 5). Https://www.sciencedirect.com/science/article/abs/pii/S1047847720300046?via=ihub. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
+3. Johnson, K. A., Fox, N. C., Sperling, R. A., & Klunk, W. E. (2012, April). Brain Imaging in alzheimer disease. Cold Spring Harbor perspectives in medicine. https://pmc.ncbi.nlm.nih.gov/articles/PMC3312396 
+4. Krishnapriya, S., & Karuna, Y. (2023, April 20). Pre-trained deep learning models for brain MRI image classification. Frontiers in human neuroscience. https://pmc.ncbi.nlm.nih.gov/articles/PMC10157370/ 
+5. Mayo Foundation for Medical Education and Research. (2024, November 8). Alzheimer’s disease. Mayo Clinic. https://www.mayoclinic.org/diseases-conditions/alzheimers-disease/symptoms-causes/syc-20350447 
+6. Rao, Y., Zhao, W., Zhu, Z., Lu, J., & Zhou, J. (2021, October 26). Global Filter Networks for Image Classification. arXiv.org. https://arxiv.org/abs/2107.00645 
+7. Safdar, M. F., Alkobaisi, S. S., & Zahra, F. T. (2020, March). A comparative analysis of data augmentation approaches for Magnetic Resonance Imaging (MRI) scan images of brain tumor. PubMed Central. https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/ 
+8. Zhang, K., Wang,  eidong, Cui, Y., LV, Z., & Fan, Y. (2024, January). GFNet: A pioneering approach for precisely estimating ash content in coal through the fusion of graph convolution and feedforward network. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
 
 [^1]: https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/
 [^2]: https://www.sciencedirect.com/science/article/pii/S0952197623014859

@@ -1,4 +1,3 @@
-# Source code of the models
 import torch
 import torch.nn as nn
 import torch.fft
@@ -6,7 +5,6 @@ from functools import partial
 from torch.nn.init import trunc_normal_
 from timm.models.layers import DropPath
 import math
-
 
 class Percep(nn.Module):
     """Feed-forward network with GELU activation."""
