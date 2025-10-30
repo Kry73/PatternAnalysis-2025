@@ -6,10 +6,9 @@
 - [Model Implementation](#model-implementation)
 - [Training & Evaluation](#training--evaluation)
 - [Results](#results)
-- [Installation & Usage](#installation--usage)
+- [Usage](#usage)
 - [File Structure](#file-structure)
 - [References](#references)
-- [Acknowledgements](#acknowledgements)
 
 ## Introduction
 
@@ -73,6 +72,7 @@ In this file, the datasets are loaded and data augmentations are applied for GFn
 
 In the medical domain, data augmentation is important in improving a model robustness, especially in the case of low volume of datasets due to privacy issue or rarity of diseases. In this case, the size of the dataset is moderate, and thus appropriate data augmentation is needed to increase the effective variability of the training data, reduce overfitting and improve the model's generalisation to unseen MRI scans.
 
+**Training**\
 The training augmentation pipeline includes:
 ```ruby
 train_transform = transforms.Compose([
@@ -91,7 +91,8 @@ train_transform = transforms.Compose([
         transforms.RandomErasing(p=0.5, scale=(0.02, 0.25))
     ])
 ```
-**Cropping & Scaling**
+<ins>Cropping & Scaling</ins>
+
 ```ruby
 class AutoCropBlack:
     """Remove black borders from MRI scans"""
@@ -118,12 +119,12 @@ After cropping, each scan is scaled back up to consistent size to standardise th
 
 Notably, in A Comparative Analysis of Data Augmentation[^1] study found that crop & scale approach achieved the second-best classification accuracy, supporting the effectiveness of this technique for medical imaging tasks.
 
-**Random Affine**
+<ins>Random Affine</ins>\
 RandomAffine applies small random rotations, translations, and scaling to each MRI slice, simulating natural variations that occur during patient positioning or image acquisition. In medical imaging, even slight head movements or scanner alignment differences can lead to spatial inconsistencies between scans. 
 
 Hence, by introducing controlled geometric perturbations, this transformation enhances the model’s ability to generalize and accurately recognize brain structures under varying spatial conditions. The magnitude of each perturbation is adapted from studies on brain tumor detection, where morphological variations are more pronounced. In contrast, since Alzheimer’s-related structural changes are subtler, our chosen parameters are intentionally more conservative to preserve anatomical integrity and avoid excessive distortion.
 
-**Others**
+<ins>Others</ins>\
 Horizontal flipping is applied with a 50% probability to introduce left–right symmetry variations in the training data. Although brain structures are largely symmetrical, subtle asymmetries can occur due to individual anatomy or disease progression. Incorporating horizontal flips helps the model remain invariant to spatial orientation while still learning relevant lateralized features.
 
 Color jittering adjusts brightness and contrast within controlled limits (±0.2), simulating natural intensity variations that may arise from different MRI scanners or acquisition parameters. This enhances the robustness of the model against scanner-dependent artifacts and illumination inconsistencies.
@@ -132,6 +133,7 @@ Following these augmentations, images are converted into tensors and normalized 
 
 ![Augmentation Sample](images/augmentation_sample_1_AD.png "Augmentation Sample")
 
+**Testing**\
 For testing and evaluation, only deterministic preprocessing steps are applied to ensure consistent result:
 ```ruby
 test_transform = transforms.Compose([
@@ -149,7 +151,7 @@ This project implements PyramidGFNet (PGFNet), a hierarchical extension of GFNet
 
 A study[^2] has shown that PGFNet achieved superior performance, rivaling the SOTA EfficientNet. Although the cited study evaluated PGFNet on a coal ash content estimation task, its relevance extends to MRI brain imaging because both involve analyzing fine-grained grayscale textures. In both coal imaging and MRI scans, the model must detect subtle intensity and structural variations rather than color cues. 
 
-Furthermore SOTA EfficientNet is well known for capturing hierarchical spatial features effectively even in single-channel data. Hence, the fact that PGFNet rivals SOTA EfficientNet in such a grayscale-dependent and texture-sensitive task suggests that PGFNet can similarly excel in MRI-based classification—where discriminative patterns of brain tissue, rather than color differences, are crucial.
+Furthermore SOTA EfficientNet is well known for capturing hierarchical spatial features effectively even in single-channel data. Hence, the fact that PGFNet rivals SOTA EfficientNet in such a grayscale-dependent and texture-sensitive task suggests that PGFNet can similarly excel in MRI-based classification, where discriminative patterns of brain tissue, rather than color differences, are crucial.
 
 In this implementation, PGFNet architecture is implemented in three main variants:
 | Variant  | Parameters |Depth |
@@ -162,9 +164,14 @@ In this implementation, PGFNet architecture is implemented in three main variant
 
 ## Results
 
-## Installation
+## Usage
+### Installation
 
-## Dependencies
+### Dependencies
+
+### Reproducibility
+
+### Test Script
 
 ## File Structure
 
@@ -178,15 +185,16 @@ recognition/
     ├── README.md       # This file
     ├── images          # Folder containing diagrams and visualisation
 ```
-## Footnotes
+
+## References - TBC
+Barkhof, F., Hazewinkel, M., Binnewijzend, M., & Smithuis, R. (2022, March 3). Dementia - role of MRI. Radiology Assistant. https://radiologyassistant.nl/neuroradiology/dementia/role-of-mri 
+Islam, T., Hafiz, Md. S., Jim, J. R., Kabir, Md. M., & Mridha, M. F. (2024, June 5). Https://www.sciencedirect.com/science/article/abs/pii/S1047847720300046?via=ihub. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
+Johnson, K. A., Fox, N. C., Sperling, R. A., & Klunk, W. E. (2012, April). Brain Imaging in alzheimer disease. Cold Spring Harbor perspectives in medicine. https://pmc.ncbi.nlm.nih.gov/articles/PMC3312396 
+Krishnapriya, S., & Karuna, Y. (2023, April 20). Pre-trained deep learning models for brain MRI image classification. Frontiers in human neuroscience. https://pmc.ncbi.nlm.nih.gov/articles/PMC10157370/ 
+Mayo Foundation for Medical Education and Research. (2024, November 8). Alzheimer’s disease. Mayo Clinic. https://www.mayoclinic.org/diseases-conditions/alzheimers-disease/symptoms-causes/syc-20350447 
+Rao, Y., Zhao, W., Zhu, Z., Lu, J., & Zhou, J. (2021, October 26). Global Filter Networks for Image Classification. arXiv.org. https://arxiv.org/abs/2107.00645 
+Safdar, M. F., Alkobaisi, S. S., & Zahra, F. T. (2020, March). A comparative analysis of data augmentation approaches for Magnetic Resonance Imaging (MRI) scan images of brain tumor. PubMed Central. https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/ 
+Zhang, K., Wang,  eidong, Cui, Y., LV, Z., & Fan, Y. (2024, January). GFNet: A pioneering approach for precisely estimating ash content in coal through the fusion of graph convolution and feedforward network. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
+
 [^1]: https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/
 [^2]: https://www.sciencedirect.com/science/article/pii/S0952197623014859
-## References - TBC
-https://arxiv.org/pdf/2107.00645
-https://radiologyassistant.nl/neuroradiology/dementia/role-of-mri
-https://www.mayoclinic.org/diseases-conditions/alzheimers-disease/symptoms-causes/syc-20350447
-https://pmc.ncbi.nlm.nih.gov/articles/PMC3312396/
-https://www.sciencedirect.com/science/article/pii/S277244252400042X#b111
-https://pmc.ncbi.nlm.nih.gov/articles/PMC10157370/
-
-## Acknowledgement
