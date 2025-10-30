@@ -130,7 +130,7 @@ Color jittering adjusts brightness and contrast within controlled limits (±0.2)
 
 Following these augmentations, images are converted into tensors and normalized using the dataset’s mean and standard deviation, ensuring consistent input scaling across all batches. Finally, RandomErasing is applied with a probability of 0.5, randomly masking small regions of the image. This technique acts as a form of regularization, preventing the model from over-relying on specific local features and encouraging more distributed, context-aware learning of brain morphology.
 
-![Augmentation Diversity](images/augmentation_sample_1_AD.png "Augmentation Diversity")
+![Augmentation Sample](images/augmentation_sample_1_AD.png "Augmentation Sample")
 
 For testing and evaluation, only deterministic preprocessing steps are applied to ensure consistent result:
 ```ruby
@@ -143,6 +143,20 @@ test_transform = transforms.Compose([
 ```
 
 ## Model Implementation
+This project implements PyramidGFNet (PGFNet), a hierarchical extension of GFNet, which has 4 stages, each marked with varying fearure map resoultion. This design enables the network to learn both fine-grained local textures and high-level semantic representation, similar to vision transformers but with substantially lower computational overhead.
+
+![Pyramid GFNet](images/PGFNet.jpg "Pyramid GFNet")
+
+A study[^2] has shown that PGFNet achieved superior performance, rivaling the SOTA EfficientNet. Although the cited study evaluated PGFNet on a coal ash content estimation task, its relevance extends to MRI brain imaging because both involve analyzing fine-grained grayscale textures. In both coal imaging and MRI scans, the model must detect subtle intensity and structural variations rather than color cues. 
+
+Furthermore SOTA EfficientNet is well known for capturing hierarchical spatial features effectively even in single-channel data. Hence, the fact that PGFNet rivals SOTA EfficientNet in such a grayscale-dependent and texture-sensitive task suggests that PGFNet can similarly excel in MRI-based classification—where discriminative patterns of brain tissue, rather than color differences, are crucial.
+
+In this implementation, PGFNet architecture is implemented in three main variants:
+| Variant  | Parameters |Depth |
+| ------------- | ------------- |------------- |
+| Tiny | ~13M  |[2, 2, 6, 2] |
+| Small | ~26M  |[3, 4, 6, 3] |
+| Base | ~44M  |[3, 4, 18, 3] |
 
 ## Training and Evaluation
 
@@ -166,6 +180,7 @@ recognition/
 ```
 ## Footnotes
 [^1]: https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/
+[^2]: https://www.sciencedirect.com/science/article/pii/S0952197623014859
 ## References - TBC
 https://arxiv.org/pdf/2107.00645
 https://radiologyassistant.nl/neuroradiology/dementia/role-of-mri
