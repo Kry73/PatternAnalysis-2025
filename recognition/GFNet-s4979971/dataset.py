@@ -16,13 +16,13 @@ class AutoCropBlack:
         mask = gray_np > self.threshold
         
         if not np.any(mask):
-            return img
+            return gray
         
         coords = np.argwhere(mask)
         y0, x0 = coords.min(axis=0)
         y1, x1 = coords.max(axis=0) + 1
         
-        return img.crop((x0, y0, x1, y1))
+        return gray.crop((x0, y0, x1, y1))
 
 
 def get_data_loaders(data_dir, batch_size=32, img_size=224, num_workers=4):
@@ -34,7 +34,6 @@ def get_data_loaders(data_dir, batch_size=32, img_size=224, num_workers=4):
     # TRAINING: Medical-appropriate augmentation
     train_transform = transforms.Compose([
         AutoCropBlack(threshold=10),              # Remove scanner artifacts
-        transforms.Grayscale(num_output_channels=1),  # MRI is grayscale
         transforms.RandomResizedCrop(
             (img_size, img_size), 
             scale=(0.80, 1.0)
@@ -54,7 +53,6 @@ def get_data_loaders(data_dir, batch_size=32, img_size=224, num_workers=4):
     # TESTING: Deterministic only
     test_transform = transforms.Compose([
         AutoCropBlack(threshold=10),
-        transforms.Grayscale(num_output_channels=1),
         transforms.Resize((img_size, img_size)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.2670], std=[0.2657])

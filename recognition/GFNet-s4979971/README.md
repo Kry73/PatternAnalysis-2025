@@ -2,7 +2,6 @@
 
 ## Table of Contents
 - [Introduction](#introduction)
-- [Alzheimer’s Disease (AD)](#alzheimers-disease-ad)
 - [Dataset](#dataset)
 - [Model Implementation](#model-implementation)
 - [Training & Evaluation](#training--evaluation)
@@ -70,9 +69,69 @@ ADNI/
 ```
 
 ### dataset.py
+In this file, the datasets are loaded and data augmentations are applied for GFnet training on ADNI AD/NC dataset.
 
-get_data_loaders(ddata_dir, batch_size=32, img_size=224, num_workers=4)
-Data loaders for GFNet training on ADNI AD/NC dataset.
+In the medical domain, data augmentation is important in improving a model robustness, especially in the case of low volume of datasets due to privacy issue or rarity of diseases. In this case, the size of the dataset is moderate, and thus appropriate data augmentation is needed to increase the effective variability of the training data, reduce overfitting and improve the model's generalisation to unseen MRI scans.
+
+The training augmentation pipeline includes:
+```
+train_transform = transforms.Compose([
+        AutoCropBlack(threshold=10),              # Remove scanner artifacts
+        transforms.RandomResizedCrop(
+            (img_size, img_size), 
+            scale=(0.80, 1.0)
+        ),
+        transforms.RandomAffine(
+            degrees=15,
+            translate=(0.1, 0.1),
+            scale=(0.90, 1.1),
+            shear=8
+        ),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2), # Intensity variation
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.2670], std=[0.2657]),  # Your dataset stats
+        transforms.RandomErasing(p=0.5, scale=(0.02, 0.25))
+    ])
+```
+**AutoCropBlack**
+```
+class AutoCropBlack:
+    """Remove black borders from MRI scans"""
+    def __init__(self, threshold=10):
+        self.threshold = threshold
+    
+    def __call__(self, img):
+        gray = img.convert('L')
+        gray_np = np.array(gray)
+        mask = gray_np > self.threshold
+        
+        if not np.any(mask):
+            return gray
+        
+        coords = np.argwhere(mask)
+        y0, x0 = coords.min(axis=0)
+        y1, x1 = coords.max(axis=0) + 1
+        
+        return gray.crop((x0, y0, x1, y1))
+```
+This class is a custom transform that removes non-informative black borders from MRI scans. Many MRI images include large black regions outside the brain due to scanner padding or acquisition settings. AutoCropBlack converts the image to grayscale, identifies all pixels above a specified intensity threshold, and crops the image to the smallest rectangle containing these pixels. This ensures the model focuses on relevant brain structures, reduces background noise, and saves memory and computation during training
+
+**Random Resized Crop**
+
+
+**Random Affine**
+
+
+For testing and evaluation, only deterministic preprocessing steps are applied to ensure consistent result:
+```
+test_transform = transforms.Compose([
+        AutoCropBlack(threshold=10),
+        transforms.Resize((img_size, img_size)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.2670], std=[0.2657])
+    ])
+```
+
 Medical imaging-aware preprocessing for brain MRI scans.
 To discuss:
 *AutoCropBlack
