@@ -130,7 +130,7 @@ Color jittering adjusts brightness and contrast within controlled limits (±0.2)
 
 Following these augmentations, images are converted into tensors and normalized using the dataset’s mean and standard deviation, ensuring consistent input scaling across all batches. Finally, RandomErasing is applied with a probability of 0.5, randomly masking small regions of the image. This technique acts as a form of regularization, preventing the model from over-relying on specific local features and encouraging more distributed, context-aware learning of brain morphology.
 
-![Augmentation Diversity](images/augmentation_diversity_AD.png "Augmentation Diversity")
+![Augmentation Diversity](images/augmentation_sample_1_AD.png "Augmentation Diversity")
 
 For testing and evaluation, only deterministic preprocessing steps are applied to ensure consistent result:
 ```ruby
