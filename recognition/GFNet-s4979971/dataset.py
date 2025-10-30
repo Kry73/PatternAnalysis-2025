@@ -33,20 +33,18 @@ def get_data_loaders(data_dir, batch_size=32, img_size=224, num_workers=4):
     
     # TRAINING: Medical-appropriate augmentation
     train_transform = transforms.Compose([
-        AutoCropBlack(threshold=10),              # Remove scanner artifacts
-        transforms.RandomResizedCrop(
-            (img_size, img_size), 
-            scale=(0.80, 1.0)
-        ),
+        AutoCropBlack(threshold=10),
+        transforms.Resize((img_size, img_size)),  # Consistent sizing
         transforms.RandomAffine(
-            degrees=15,
-            translate=(0.1, 0.1),
-            scale=(0.90, 1.1),
-            shear=8
+            degrees=8,                
+            translate=(0.05, 0.05),   
+            scale=(0.95, 1.05),       
+            shear=None               
         ),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2), # Intensity variation
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.2670], std=[0.2657]),  # Your dataset stats
+        transforms.Normalize(mean=[0.2670], std=[0.2657]),
         transforms.RandomErasing(p=0.5, scale=(0.02, 0.25))
     ])
     

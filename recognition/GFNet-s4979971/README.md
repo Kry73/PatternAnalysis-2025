@@ -40,8 +40,8 @@ In this study, GFNet is adapted to the Alzheimer’s Disease Neuroimaging Initia
 
 ## Dataset
 This project uses the ADNI (Alzheimer's Disease Neuroimaging Initiative) dataset for binary classification of brain MRI scans into two classes:
-*AD (Alzheimer's Disease): Diagnosed Alzheimer's patients
-*NC (Normal Control): Cognitively normal subjects
+* AD (Alzheimer's Disease): Diagnosed Alzheimer's patients
+* NC (Normal Control): Cognitively normal subjects
 
 **Dataset Statistic**
 * Total Scans: 2,189 unique 3D MRI scans
@@ -74,27 +74,25 @@ In this file, the datasets are loaded and data augmentations are applied for GFn
 In the medical domain, data augmentation is important in improving a model robustness, especially in the case of low volume of datasets due to privacy issue or rarity of diseases. In this case, the size of the dataset is moderate, and thus appropriate data augmentation is needed to increase the effective variability of the training data, reduce overfitting and improve the model's generalisation to unseen MRI scans.
 
 The training augmentation pipeline includes:
-```
+```ruby
 train_transform = transforms.Compose([
-        AutoCropBlack(threshold=10),              # Remove scanner artifacts
-        transforms.RandomResizedCrop(
-            (img_size, img_size), 
-            scale=(0.80, 1.0)
-        ),
+        AutoCropBlack(threshold=10),
+        transforms.Resize((img_size, img_size)),
         transforms.RandomAffine(
-            degrees=15,
-            translate=(0.1, 0.1),
-            scale=(0.90, 1.1),
-            shear=8
+            degrees=8,                
+            translate=(0.05, 0.05),   
+            scale=(0.95, 1.05),       
+            shear=None               
         ),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2), # Intensity variation
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.2670], std=[0.2657]),  # Your dataset stats
+        transforms.Normalize(mean=[0.2670], std=[0.2657]),
         transforms.RandomErasing(p=0.5, scale=(0.02, 0.25))
     ])
 ```
-**AutoCropBlack**
-```
+**Cropping & Scaling**
+```ruby
 class AutoCropBlack:
     """Remove black borders from MRI scans"""
     def __init__(self, threshold=10):
@@ -114,16 +112,28 @@ class AutoCropBlack:
         
         return gray.crop((x0, y0, x1, y1))
 ```
-This class is a custom transform that removes non-informative black borders from MRI scans. Many MRI images include large black regions outside the brain due to scanner padding or acquisition settings. AutoCropBlack converts the image to grayscale, identifies all pixels above a specified intensity threshold, and crops the image to the smallest rectangle containing these pixels. This ensures the model focuses on relevant brain structures, reduces background noise, and saves memory and computation during training
+AutoCropBlack is a custom transform that removes non-informative black borders from MRI scans. Many MRI images include large black regions outside the brain due to scanner padding or acquisition settings. AutoCropBlack converts the image to grayscale, identifies all pixels above a specified intensity threshold, and crops the image to the smallest rectangle containing these pixels. This ensures the model focuses on relevant brain structures, reduces background noise, and saves memory and computation during training
 
-**Random Resized Crop**
+After cropping, each scan is scaled back up to consistent size to standardise the input dimensions across the dataset.
 
+Notably, in A Comparative Analysis of Data Augmentation[^1] study found that crop & scale approach achieved the second-best classification accuracy, supporting the effectiveness of this technique for medical imaging tasks.
 
 **Random Affine**
+RandomAffine applies small random rotations, translations, and scaling to each MRI slice, simulating natural variations that occur during patient positioning or image acquisition. In medical imaging, even slight head movements or scanner alignment differences can lead to spatial inconsistencies between scans. 
 
+Hence, by introducing controlled geometric perturbations, this transformation enhances the model’s ability to generalize and accurately recognize brain structures under varying spatial conditions. The magnitude of each perturbation is adapted from studies on brain tumor detection, where morphological variations are more pronounced. In contrast, since Alzheimer’s-related structural changes are subtler, our chosen parameters are intentionally more conservative to preserve anatomical integrity and avoid excessive distortion.
+
+**Others**
+Horizontal flipping is applied with a 50% probability to introduce left–right symmetry variations in the training data. Although brain structures are largely symmetrical, subtle asymmetries can occur due to individual anatomy or disease progression. Incorporating horizontal flips helps the model remain invariant to spatial orientation while still learning relevant lateralized features.
+
+Color jittering adjusts brightness and contrast within controlled limits (±0.2), simulating natural intensity variations that may arise from different MRI scanners or acquisition parameters. This enhances the robustness of the model against scanner-dependent artifacts and illumination inconsistencies.
+
+Following these augmentations, images are converted into tensors and normalized using the dataset’s mean and standard deviation, ensuring consistent input scaling across all batches. Finally, RandomErasing is applied with a probability of 0.5, randomly masking small regions of the image. This technique acts as a form of regularization, preventing the model from over-relying on specific local features and encouraging more distributed, context-aware learning of brain morphology.
+
+![Augmentation Diversity](images/augmentation_diversity_AD.png "Augmentation Diversity")
 
 For testing and evaluation, only deterministic preprocessing steps are applied to ensure consistent result:
-```
+```ruby
 test_transform = transforms.Compose([
         AutoCropBlack(threshold=10),
         transforms.Resize((img_size, img_size)),
@@ -131,11 +141,6 @@ test_transform = transforms.Compose([
         transforms.Normalize(mean=[0.2670], std=[0.2657])
     ])
 ```
-
-Medical imaging-aware preprocessing for brain MRI scans.
-To discuss:
-*AutoCropBlack
-*Augmentation Parameters: https://pmc.ncbi.nlm.nih.gov/articles/PMC10157370/
 
 ## Model Implementation
 
@@ -159,11 +164,14 @@ recognition/
     ├── README.md       # This file
     ├── images          # Folder containing diagrams and visualisation
 ```
-
+## Footnotes
+[^1]: https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/
 ## References - TBC
 https://arxiv.org/pdf/2107.00645
 https://radiologyassistant.nl/neuroradiology/dementia/role-of-mri
 https://www.mayoclinic.org/diseases-conditions/alzheimers-disease/symptoms-causes/syc-20350447
 https://pmc.ncbi.nlm.nih.gov/articles/PMC3312396/
+https://www.sciencedirect.com/science/article/pii/S277244252400042X#b111
+https://pmc.ncbi.nlm.nih.gov/articles/PMC10157370/
 
 ## Acknowledgement
