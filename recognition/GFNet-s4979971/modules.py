@@ -11,7 +11,7 @@ import math
 class Percep(nn.Module):
     """Feed-forward network with GELU activation."""
     def __init__(self, in_features, hidden_features=None, out_features=None, 
-                 act_layer=nn.GELU, drop=0.0):
+                act_layer=nn.GELU, drop=0.0):
         super(Percep, self).__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -63,8 +63,8 @@ class GlobalFilter(nn.Module):
 class Block(nn.Module):
     """Transformer block with GlobalFilter, LayerScale, and Stochastic Depth."""
     def __init__(self, dim, mlp_ratio=3., drop=0., drop_path=0., 
-                 act_layer=nn.GELU, norm_layer=nn.LayerNorm, h=14, w=8,
-                 init_values=1e-4):
+                act_layer=nn.GELU, norm_layer=nn.LayerNorm, h=14, w=8,
+                init_values=1e-4):
         super(Block, self).__init__()
         
         self.norm1 = norm_layer(dim)
@@ -74,7 +74,7 @@ class Block(nn.Module):
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Percep(in_features=dim, hidden_features=mlp_hidden_dim, 
-                          act_layer=act_layer, drop=drop)
+                        act_layer=act_layer, drop=drop)
         
         self.gamma_1 = nn.Parameter(init_values * torch.ones(dim))
         self.gamma_2 = nn.Parameter(init_values * torch.ones(dim))
@@ -88,7 +88,7 @@ class Block(nn.Module):
 class PatchyEmbedding(nn.Module):
     """Image to Patch Embedding with overlapping patches option."""
     def __init__(self, img_size=224, patch_size=16, stride=None, 
-                 in_chans=1, embed_dim=256):
+                in_chans=1, embed_dim=256):
         super(PatchyEmbedding, self).__init__()
         
         stride = stride or patch_size
@@ -102,7 +102,7 @@ class PatchyEmbedding(nn.Module):
         self.num_patches = self.H * self.W
         
         self.proj = nn.Conv2d(in_chans, embed_dim, 
-                              kernel_size=patch_size, stride=stride)
+                            kernel_size=patch_size, stride=stride)
 
     def forward(self, x):
         x = self.proj(x)  # B, C, H, W
@@ -152,7 +152,7 @@ class PatchMerging(nn.Module):
 class PyramidStage(nn.Module):
     """A pyramid stage with multiple GFNet blocks."""
     def __init__(self, dim, depth, mlp_ratio=3., drop=0., drop_path=0.,
-                 norm_layer=nn.LayerNorm, h=14, w=8, init_values=1e-4):
+                norm_layer=nn.LayerNorm, h=14, w=8, init_values=1e-4):
         super(PyramidStage, self).__init__()
         
         # Build blocks for this stage
@@ -193,9 +193,9 @@ class PyramidGFNet(nn.Module):
         drop_path_rate: Stochastic depth rate
     """
     def __init__(self, img_size=224, patch_size=4, in_chans=1, num_classes=2,
-                 embed_dims=[64, 128, 256, 512], depths=[3, 4, 6, 3],
-                 mlp_ratios=[4, 4, 4, 4], drop_rate=0., drop_path_rate=0.1,
-                 norm_layer=None, init_values=1e-4):
+                embed_dims=[64, 128, 256, 512], depths=[3, 4, 6, 3],
+                mlp_ratios=[4, 4, 4, 4], drop_rate=0., drop_path_rate=0.1,
+                norm_layer=None, init_values=1e-4):
         super(PyramidGFNet, self).__init__()
         
         self.num_classes = num_classes

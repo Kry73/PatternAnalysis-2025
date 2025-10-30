@@ -14,6 +14,7 @@ warnings.filterwarnings('ignore')
 
 from modules import PyramidGFNet, pyramid_gfnet_tiny, pyramid_gfnet_small, pyramid_gfnet_base
 from dataset import get_data_loaders
+import random
 
 
 class EarlyStopping:
@@ -38,6 +39,40 @@ class EarlyStopping:
         else:
             self.best_score = score
             self.counter = 0
+
+def set_seed(seed):
+    """Set seed for reproducibility."""
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+def get_class_weights(train_loader):
+    """Calculate class weights from existing data."""
+    class_counts = torch.zeros(2)
+    
+    # Count samples in each class
+    for _, labels in train_loader:
+        for label in labels:
+            class_counts[label] += 1
+    
+    # Calculate weights (inverse frequency)
+    total = class_counts.sum()
+    weights = total / (2.0 * class_counts)
+    
+    print(f"\n{'='*60}")
+    print("CLASS DISTRIBUTION")
+    print(f"{'='*60}")
+    print(f"AD (class 0): {int(class_counts[0])} samples ({class_counts[0]/total*100:.1f}%)")
+    print(f"NC (class 1): {int(class_counts[1])} samples ({class_counts[1]/total*100:.1f}%)")
+    print(f"\nClass Weights:")
+    print(f"  AD weight: {weights[0]:.3f}x")
+    print(f"  NC weight: {weights[1]:.3f}x")
+    print(f"{'='*60}\n")
+    
+    return weights
 
 def mixup_data(x, y, alpha=0.3, device='cuda'):
     """
@@ -158,7 +193,7 @@ def plot_roc_curve(y_true, y_prob, save_path):
     print(f"✓ ROC Graph saved to: {save_path}")
 
 
-def train_epoch(model, train_loader, criterion, optimizer, scheduler, device, use_amp=True):
+def train_epoch(model, train_loader, criterion, optimizer, scheduler, device, use_amp=True, use_mixup=False, mixup_alpha=0.3):
     """Train for one epoch with mixed precision."""
     model.train()
     running_loss = 0.0
@@ -174,32 +209,68 @@ def train_epoch(model, train_loader, criterion, optimizer, scheduler, device, us
         
         optimizer.zero_grad()
         
-        # Mixed precision training
-        if use_amp:
-            with autocast():
+        if use_mixup and np.random.rand() > 0.5:
+            # Apply mixup
+            images, targets_a, targets_b, lam = mixup_data(
+                images, labels, alpha=mixup_alpha, device=device
+            )
+            
+            # Forward pass with mixed precision
+            if use_amp:
+                with autocast():
+                    outputs = model(images)
+                    loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                outputs = model(images)
+                loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
+                loss.backward()
+                optimizer.step()
+            
+            # For metrics, use weighted combination of predictions
+            probs = torch.softmax(outputs, dim=1)
+            _, predicted = torch.max(outputs, 1)
+            
+            # Approximate labels for mixup (use dominant label)
+            if lam >= 0.5:
+                approx_labels = targets_a
+            else:
+                approx_labels = targets_b
+
+            
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(approx_labels.cpu().numpy())
+            all_probs.extend(probs[:, 1].detach().cpu().numpy())
+            
+        else:
+            # Normal training (no mixup)
+            if use_amp:
+                with autocast():
+                    outputs = model(images)
+                    loss = criterion(outputs, labels)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
                 outputs = model(images)
                 loss = criterion(outputs, labels)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+                loss.backward()
+                optimizer.step()
+            
+            # Track metrics
+            probs = torch.softmax(outputs, dim=1)
+            _, predicted = torch.max(outputs, 1)
+            
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+            all_probs.extend(probs[:, 1].detach().cpu().numpy())
         
         if scheduler is not None:
             scheduler.step()
         
-        # Track metrics
         running_loss += loss.item()
-        probs = torch.softmax(outputs, dim=1)
-        _, predicted = torch.max(outputs, 1)
-        
-        all_preds.extend(predicted.cpu().numpy())
-        all_labels.extend(labels.cpu().numpy())
-        all_probs.extend(probs[:, 1].detach().cpu().numpy())  # Probability of class 1 (NC)
-        
         pbar.set_postfix({'loss': f'{loss.item():.4f}'})
     
     # Calculate epoch metrics
@@ -293,6 +364,7 @@ def plot_training_history(history, save_dir):
 def train_model(
     # Model selection
     model_size='small',  # 'tiny', 'small', or 'base'
+    use_class_weights = True,
     
     # Model parameters (used if model_size is None)
     img_size=224,
@@ -312,6 +384,7 @@ def train_model(
     learning_rate=1e-4,  # Slightly higher for pyramid network
     weight_decay=0.05,
     warmup_epochs=10,
+    min_lr=1e-7,
     
     # Data parameters
     data_dir="/home/groups/comp3710/ADNI/AD_NC",
@@ -320,11 +393,16 @@ def train_model(
     # Training options
     use_amp=True,
     early_stopping_patience=20,
+
+    min_delta=0.001,          # ← ADD THIS
+    use_mixup=False,          # ← ADD THIS
+    mixup_alpha=0.3,          # ← ADD THIS
     
     # Save options
-    save_dir="./checkpoints",
+    save_dir="./checkpoints_norm",
     save_best_only=True
 ):
+
     """
     Main training function for Pyramid GFNet on Alzheimer's Detection.
     
@@ -396,8 +474,28 @@ def train_model(
     print(f"Trainable parameters: {trainable_params:,}")
     
     # Loss and optimizer
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
-    print(f"Loss function: CrossEntropyLoss with label smoothing (0.1)")
+    if use_class_weights:
+        # Calculate weights
+        class_counts = torch.zeros(2)
+        for _, labels in train_loader:
+            for label in labels:
+                class_counts[label] += 1
+        
+        total = class_counts.sum()
+        class_weights = (total / (2.0 * class_counts)).to(device)
+        
+        criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
+        print(f"Loss: Weighted CrossEntropyLoss")
+        print(f"  AD weight: {class_weights[0]:.3f}, NC weight: {class_weights[1]:.3f}")
+    else:
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+        print(f"Loss: Standard CrossEntropyLoss")
+    
+    if use_mixup:
+        print(f"Mixup: ENABLED (alpha={mixup_alpha}, probability=50%)")
+        print(f"  → Training batches will be randomly mixed")
+    else:
+        print(f"Mixup: DISABLED")
     
     optimizer = optim.AdamW(
         model.parameters(),
@@ -413,8 +511,13 @@ def train_model(
     def lr_lambda(current_step):
         if current_step < warmup_steps:
             return float(current_step) / float(max(1, warmup_steps))
-        progress = (current_step - warmup_steps) / (total_steps - warmup_steps)
-        return max(0.0, 0.5 * (1.0 + np.cos(np.pi * progress)))
+        else:
+            # Cosine annealing with min_lr
+            progress = (current_step - warmup_steps) / (total_steps - warmup_steps)
+            cosine_decay = 0.5 * (1.0 + np.cos(np.pi * progress))
+            # Scale between min_lr and learning_rate
+            return max(min_lr / learning_rate, cosine_decay)
+
     
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     print(f"Scheduler: Warmup ({warmup_epochs} epochs) + Cosine Annealing")
@@ -422,7 +525,7 @@ def train_model(
     # Early stopping
     early_stopping = EarlyStopping(
         patience=early_stopping_patience, 
-        min_delta=0.001, 
+        min_delta=min_delta, 
         mode='max'
     )
     
@@ -448,7 +551,9 @@ def train_model(
         
         # Train
         train_metrics = train_epoch(
-            model, train_loader, criterion, optimizer, scheduler, device, use_amp
+            model, train_loader, criterion, optimizer, scheduler, device, use_amp,
+            use_mixup=use_mixup,      # ← ADD
+            mixup_alpha=mixup_alpha
         )
         
         # Validate
@@ -606,17 +711,31 @@ if __name__ == "__main__":
     print("="*60)
     
     model, history, metrics = train_model(
-        model_size='small',  
-        drop_rate=0.35,                  
+        model_size='small',
+        drop_rate=0.35,
         drop_path_rate=0.4,
+        
+        # Training
         img_size=224,
         batch_size=24,
-        num_epochs=200,
+        num_epochs=250,
         learning_rate=8e-5,
-        weight_decay=0.12,               
-        warmup_epochs=20,              
-        early_stopping_patience=20,
-        use_amp=True
+        min_lr=1e-7,
+        weight_decay=0.12,
+        warmup_epochs=20,
+        
+        # Early stopping
+        early_stopping_patience=25,
+        min_delta=0.0005,
+        
+        # Augmentation
+        use_mixup=True,
+        mixup_alpha=0.3,
+        
+        # Options
+        use_amp=True,
+        use_class_weights=True,
+
     )
     
     print("\n" + "="*60)
