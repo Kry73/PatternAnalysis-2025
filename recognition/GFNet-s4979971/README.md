@@ -271,6 +271,24 @@ The distinction between slice-level and scan-level predictions informs our train
 ## Results
 ⚠️ Note: Results are not fully reproducible due to missing random seed control. Running the same training may produce results varying by ±1%.
 
+The trained PGFNet model is evaluated using both slice-level and scan-level metrics. Slice-level evaluation measures the model’s ability to classify individual 2D MRI slices, capturing local anatomical patterns. Scan-level evaluation aggregates slice predictions to generate a single label per scan, providing a clinically meaningful assessment of the patient’s condition.
+
+The PGFNet BASE model achieves a scan-level accuracy of 78.67%, with slice-level accuracy at 75.18%.
+
+**Training History**
+![Training History](images/training_history.png "Training History")
+
+The training curves reveal several important patterns about model behavior and learning characteristics. The model demonstrates early convergence, with scan-level accuracy plateating at 75-78% around epoch 20 despite continuing to train for 60 epochs. This early plateau suggests that the model has learned the main discriminative features quickly but lacks the capacity or optimisation strategy to push beyond this threshold. After epoch 30, a significant train-validation gap emerges, with training loss continuing to decrease from 0.5 to 0.36 while validation loss increases and becomes unstable, reaching peaks of 0.82. This widening gap is a clear indicator of overfitting, where the model begins to memorize training examples rather than learning generalizable patterns. Despite the validation loss instability between epochs 30-60, the scan accuracy remains relatively stable, suggesting that while the model's confidence calibration degrades, its prediction consistency is maintained through majority voting across slices.
+
+The inability to reach the 80% target stems from multiple factors. The model architecture, while using the BASE variant with approximately 25M parameters, may still lack sufficient capacity to capture the subtle neuroanatomical changes associated with early-stage Alzheimer's disease. The learning rate schedule shows an aggressive warmup to full learning rate by epoch 10, which may cause the optimizer to overshoot optimal weight configurations.
+
+Additionally, the overfitting observed after epoch 30 indicates insufficient regularization, suggesting that stronger techniques such as dropout, weight decay, or label smoothing are needed. The conservative augmentation strategy may not provide enough data variation during training. However, stronger or more aggressive augmentation could be problematic, given the delicate and subtle nature of the AD markers in MRI slices. Early-stage Alzheimer's markers can be extremely subtle, and even expert radiologists may struggle to detect them. Overly aggressive transformations risk distorting or removing these subtle features, which could confuse the model. Consequently, the inherent difficulty of the AD vs NC classification task, combined with limitations in slice-level information, contributes to the observed performance ceiling.
+
+The optimization strategy shows clear signs of getting stuck in local minima, with the learning rate remaining constant after the initial warmup phase rather than gradually decaying. The model uses a warmup phase followed by a cosine decay scheduler. During warmup, the learning rate ramps up linearly from 0 to the initial learning_rate. After warmup, the scheduler applies cosine decay toward min_lr.
+
+However, in practice, the learning rate appeared roughly constant after warmup. This happens because the min_lr / learning_rate ratio is very small (1e-7 / 5e-5 = 0.02), and the cosine decay starts near 1.0, so the decay is very slow over the number of training steps, especially early in training. As a result, the optimizer continues taking relatively large steps, limiting fine-tuning near local minima and contributing to the plateau in performance.
+
+
 
 
 
