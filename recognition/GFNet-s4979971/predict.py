@@ -298,6 +298,8 @@ def visualize_model_complete(model, test_loader, device, save_dir):
 def plot_misclassified_samples(test_loader, all_labels, all_preds, all_probs, all_scan_ids, save_dir, max_samples=20):
     """Plot misclassified SCANS (at scan-level after majority voting)."""
     save_dir = Path(save_dir)
+    misclassified_dir = save_dir / 'misclassified_samples'
+    misclassified_dir.mkdir(exist_ok=True)
     
     class_names = ['AD', 'NC']
     
@@ -435,16 +437,26 @@ def plot_model_complete_analysis(results, save_dir):
     ax2.set_ylabel('True Label')
     ax2.set_xlabel('Predicted Label')
     
-    # 3. ROC Curve
+    # 3. ROC Curve (SCAN-LEVEL)
     ax3 = fig.add_subplot(gs[0, 2])
-    fpr = np.array(results['roc_curve']['fpr'])
-    tpr = np.array(results['roc_curve']['tpr'])
-    ax3.plot(fpr, tpr, 'b-', linewidth=2, label=f'AUC = {slice_metrics["roc_auc"]:.4f}')
-    ax3.plot([0, 1], [0, 1], 'k--', linewidth=1, label='Random')
+    
+    # Plot scan-level ROC (primary)
+    scan_fpr = np.array(results['roc_curve_scan']['fpr'])
+    scan_tpr = np.array(results['roc_curve_scan']['tpr'])
+    scan_auc_val = results['roc_curve_scan']['auc']
+    ax3.plot(scan_fpr, scan_tpr, 'g-', linewidth=3, label=f'Scan-Level AUC = {scan_auc_val:.4f} ⭐', alpha=0.9)
+    
+    # Plot slice-level ROC (reference)
+    slice_fpr = np.array(results['roc_curve_slice']['fpr'])
+    slice_tpr = np.array(results['roc_curve_slice']['tpr'])
+    slice_auc_val = results['roc_curve_slice']['auc']
+    ax3.plot(slice_fpr, slice_tpr, 'b--', linewidth=1.5, label=f'Slice-Level AUC = {slice_auc_val:.4f}', alpha=0.5)
+    
+    ax3.plot([0, 1], [0, 1], 'k--', linewidth=1, label='Random', alpha=0.3)
     ax3.set_xlabel('False Positive Rate')
     ax3.set_ylabel('True Positive Rate')
-    ax3.set_title('ROC Curve', fontweight='bold', fontsize=12)
-    ax3.legend()
+    ax3.set_title('ROC Curve (Scan-Level) ⭐', fontweight='bold', fontsize=12)
+    ax3.legend(fontsize=9)
     ax3.grid(True, alpha=0.3)
     
     # 4. Metrics Comparison (Slice vs Scan)
@@ -499,7 +511,7 @@ def plot_model_complete_analysis(results, save_dir):
         ['Recall', f"{slice_metrics['recall']:.4f}", f"{scan_metrics['recall']:.4f}"],
         ['F1-Score', f"{slice_metrics['f1']:.4f}", f"{scan_metrics['f1']:.4f}"],
         ['Specificity', f"{slice_metrics['specificity']:.4f}", f"{scan_metrics['specificity']:.4f}"],
-        ['AUC-ROC', f"{slice_metrics['roc_auc']:.4f}", f"{scan_metrics['roc_auc']:.4f}" if scan_metrics['roc_auc'] else 'N/A']
+        ['AUC-ROC', f"{slice_metrics['roc_auc']:.4f}", f"{scan_metrics['roc_auc']:.4f}"]
     ]
     
     table = ax5.table(cellText=summary_data, cellLoc='center', loc='center',
@@ -562,7 +574,7 @@ def plot_model_complete_analysis(results, save_dir):
     elif scan_acc >= 0.80:
         insights_text += "✅ GOOD Performance!\n"
     elif scan_acc >= 0.70:
-        insights_text += "⚠️ MODERATE Performance\n"
+        insights_text += "⚠️  MODERATE Performance\n"
     else:
         insights_text += "❌ Needs Improvement\n"
     
@@ -673,6 +685,11 @@ def evaluate_model(model, test_loader, device):
     print(f"⭐ MAIN METRIC: Scan-Level Accuracy = {scan_metrics['scan_accuracy']*100:.2f}%")
     print("="*60)
     
+    # Calculate SCAN-LEVEL ROC curve
+    scan_preds_df = scan_metrics['scan_predictions']
+    scan_fpr, scan_tpr, _ = roc_curve(scan_preds_df['y_true'], scan_preds_df['y_prob'])
+    scan_roc_auc = auc(scan_fpr, scan_tpr)
+    
     # SAVE RESULTS
     results = {
         'slice_level': {
@@ -691,13 +708,19 @@ def evaluate_model(model, test_loader, device):
             'recall': float(scan_metrics['scan_recall']),
             'f1': float(scan_metrics['scan_f1']),
             'specificity': float(scan_metrics['scan_specificity']),
-            'roc_auc': float(scan_metrics['scan_auc']) if scan_metrics['scan_auc'] else None,
+            'roc_auc': float(scan_roc_auc),
             'confusion_matrix': scan_metrics['scan_confusion_matrix'].tolist(),
             'num_scans': scan_metrics['num_scans']
         },
-        'roc_curve': {
+        'roc_curve_slice': {
             'fpr': fpr.tolist(),
-            'tpr': tpr.tolist()
+            'tpr': tpr.tolist(),
+            'auc': float(slice_roc_auc)
+        },
+        'roc_curve_scan': {
+            'fpr': scan_fpr.tolist(),
+            'tpr': scan_tpr.tolist(),
+            'auc': float(scan_roc_auc)
         }
     }
     
@@ -721,6 +744,14 @@ def evaluate_model(model, test_loader, device):
     # Plot model frequency analysis
     visualize_model_complete(model, test_loader, device, save_dir)
     
+    # Individual plots
+    plot_confusion_matrix(slice_cm, save_dir / 'confusion_matrix_slice_level.png', 
+                         title='Slice-Level Confusion Matrix')
+    plot_confusion_matrix(scan_metrics['scan_confusion_matrix'], 
+                         save_dir / 'confusion_matrix_scan_level.png',
+                         title='Scan-Level Confusion Matrix (Majority Voting)')
+    plot_roc_curve(fpr, tpr, slice_roc_auc, save_dir / 'roc_curve.png')
+    
     # Classification report
     class_names = ['AD', 'NC']
     scan_preds = scan_metrics['scan_predictions']
@@ -734,6 +765,51 @@ def evaluate_model(model, test_loader, device):
     print(f"\n✓ All results saved to: {save_dir}")
     
     return results, all_labels, all_preds, all_probs
+
+
+def plot_confusion_matrix(cm, save_path, title='Confusion Matrix'):
+    """Plot and save confusion matrix."""
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=False, fmt='d', cmap='Greens',
+                xticklabels=['AD', 'NC'], yticklabels=['AD', 'NC'],
+                cbar_kws={'label': 'Count'})
+    plt.ylabel('True Label')
+    plt.xlabel('Predicted Label')
+    plt.title(title)
+    
+    cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
+    labels = np.array([['TP', 'FN'], ['FP', 'TN']])
+
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            plt.text(j + 0.5, i + 0.5, f"{labels[i, j]}\n{cm[i, j]}\n({cm_percent[i, j]:.1f}%)",
+                 ha='center', va='center', fontsize=11, 
+                 color='white' if cm[i, j] > cm.max() / 2 else 'black')
+    
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+    print(f"  ✓ {save_path.name}")
+
+
+def plot_roc_curve(fpr, tpr, roc_auc, save_path):
+    """Plot and save ROC curve."""
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color='darkorange', lw=2,
+             label=f'ROC curve (AUC = {roc_auc:.4f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', label='Random')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve: Alzheimer\'s Detection')
+    plt.legend(loc="lower right")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+    print(f"  ✓ {save_path.name}")
+
 
 def main():
     """Main evaluation and prediction pipeline."""
@@ -780,12 +856,14 @@ def main():
     print("\n" + "="*60)
     print("✓ Complete! Check the following files:")
     print("="*60)
-    print("  📊 model_complete_analysis.png - Performance metrics analysis")
+    print("  📊 model_complete_analysis.png - Full performance analysis")
+    print("       ↳ Includes: Confusion matrices, ROC curve, all metrics")
     print("  🔬 model_frequency_analysis.png - Learned filters & features")
-    print("  🔍 misclassified_samples_scan_level.png - Misclassified scans")
-    print("  📋 test_results.json - Detailed metrics")
+    print("  🔍 misclassified_samples_scan_level.png - Misclassified SCANS")
+    print("  📋 test_results.json - Detailed metrics (JSON)")
     print("  📝 scan_predictions.csv - Per-scan predictions")
     print("  📝 misclassified_scans_list.csv - Misclassified scans details")
+    print("  📄 classification_report_scan_level.txt - Text report")
     print("="*60)
 
 

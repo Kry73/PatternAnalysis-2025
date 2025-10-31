@@ -268,6 +268,20 @@ The distinction between slice-level and scan-level predictions informs our train
 * Mixup is applied at the slice level to help the model generalize better.
 * Early stopping is monitored at the slice level to prevent overfitting, while scan-level performance guides final model selection.
 
+### Evaluation
+After training, the model is evaluated at both slice-level and scan-level to assess its performance comprehensively.
+
+**Slice-Level Evaluation**\
+Each MRI slice is independently classified as AD or NC. Metrics such as accuracy, precision, recall, F1-score, specificity, and ROC-AUC are computed for all slices. Slice-level evaluation highlights the model’s ability to detect local anatomical patterns, though individual slices may contain subtle or ambiguous markers, particularly in early-stage cases.
+
+**Scan-Level Evaluation**\
+Slice-level predictions are aggregated to obtain scan-level classifications using majority voting. This captures the overall diagnostic decision per scan and typically improves performance by reducing the influence of ambiguous slices. Scan-level metrics mirror those at the slice level and include confusion matrices and ROC-AUC curves.
+
+**Visual Analysis**\
+* Misclassified scans are visualised to identify patterns in errors. 
+* Comprehensive visualisations include confusion matrices, performance metric comparisons, ROC curves
+* Model frequency analysis showing learned filters, feature maps, and attention patterns.
+
 ## Results
 ⚠️ Note: Results are not fully reproducible due to missing random seed control. Running the same training may produce results varying by ±1%.
 
@@ -275,7 +289,7 @@ The trained PGFNet model is evaluated using both slice-level and scan-level metr
 
 The PGFNet BASE model achieves a scan-level accuracy of 78.67%, with slice-level accuracy at 75.18%.
 
-**Training History**
+### Training History
 ![Training History](images/training_history.png "Training History")
 
 The training curves reveal several important patterns about model behavior and learning characteristics. The model demonstrates early convergence, with scan-level accuracy plateating at 75-78% around epoch 20 despite continuing to train for 60 epochs. This early plateau suggests that the model has learned the main discriminative features quickly but lacks the capacity or optimisation strategy to push beyond this threshold. After epoch 30, a significant train-validation gap emerges, with training loss continuing to decrease from 0.5 to 0.36 while validation loss increases and becomes unstable, reaching peaks of 0.82. This widening gap is a clear indicator of overfitting, where the model begins to memorize training examples rather than learning generalizable patterns. Despite the validation loss instability between epochs 30-60, the scan accuracy remains relatively stable, suggesting that while the model's confidence calibration degrades, its prediction consistency is maintained through majority voting across slices.
@@ -288,7 +302,32 @@ The optimization strategy shows clear signs of getting stuck in local minima, wi
 
 However, in practice, the learning rate appeared roughly constant after warmup. This happens because the min_lr / learning_rate ratio is very small (1e-7 / 5e-5 = 0.02), and the cosine decay starts near 1.0, so the decay is very slow over the number of training steps, especially early in training. As a result, the optimizer continues taking relatively large steps, limiting fine-tuning near local minima and contributing to the plateau in performance.
 
+### Complete Analysis
+![Complete Analysis](images/model_complete_analysis.png "Complete Analysis")
 
+**Confusion Matrix**\
+The scan-level confusion matrix reveals important patterns in the model's prediction behavior. For Alzheimer's Disease cases, the model correctly identifies 171 out of 223 cases (True Positives) with a recall of 80.62%, meaning it successfully detects approximately 4 out of 5 AD patients. However, it misclassifies 52 AD cases as Normal Control (False Negatives), representing a 23.3% miss rate that could have serious clinical implications as these patients would not receive early intervention. For Normal Control cases, the model correctly identifies 183 out of 227 cases (True Negatives) with a specificity of 76.68%, but incorrectly flags 44 healthy individuals as having AD (False Positives). This relatively balanced error distribution (52 FN vs 44 FP) suggests the model does not exhibit strong bias toward either class, though the slightly higher false negative rate indicates a tendency to under-diagnose AD in ambiguous cases.
+
+The slice-level confusion matrix shows a similar pattern but with lower overall accuracy, demonstrating why scan-level aggregation is crucial. At the slice level, the model achieves 3,254 true AD predictions and 3,512 true NC predictions, but makes 1,206 false negative errors and 1,028 false positive errors. The higher number of slice-level false negatives compared to scan-level illustrates how individual slice predictions can be noisy, but majority voting across slices successfully filters out much of this noise to produce more reliable scan-level diagnoses.
+
+**ROC Curve**\
+The ROC curve (Receiver Operating Characteristic) is an essential diagnostic tool for evaluating medical classification models. It plots the true positive rate (sensitivity) against the false positive rate (1 - specificity) at various decision thresholds, providing a comprehensive view of the model’s ability to discriminate between Alzheimer’s Disease (AD) and Normal Control (NC) cases.
+
+Unlike accuracy, which depends on a fixed threshold, the ROC curve shows performance across all thresholds, making it particularly valuable for imbalanced or ambiguous medical datasets where the cost of false negatives (missed diagnoses) is high. The Area Under the ROC Curve (AUC) quantifies this performance, where an AUC closer to 1.0 indicates a strong ability to distinguish between AD and NC, while 0.5 suggests random guessing.
+
+The ROC curve visualization displays both slice-level (AUC = 0.8247, dashed line) and scan-level (AUC = 0.8582, solid green line) performance, providing a clear comparison of discriminative ability at different aggregation levels. Both curves perform substantially better than random chance (diagonal dashed line), with the scan-level curve consistently dominating the slice-level curve across all false positive rates, demonstrating the benefit of majority voting aggregation. The scan-level curve shows particularly strong performance in the critical low false-positive region (0-0.2 FPR), where it achieves approximately 60-70% true positive rate while maintaining very low false positives—an ideal characteristic for a screening tool. The smooth, convex shape of both curves without significant irregularities suggests stable model predictions across different probability thresholds.
+
+The scan-level AUC of 0.8582 means that if we randomly select one AD scan and one NC scan, the model correctly ranks the AD scan as more likely diseased 85.82% of the time. However, as highlighted in a study[^5], a high AUC alone does not guarantee clinical usefulness: it does not capture the absolute error rates, misclassification costs, or the distribution of borderline/early-stage cases. Additional metrics like sensitivity, specificity, and precision‑recall trade-offs are critical to understanding the model’s practical performance in real-world diagnostic settings.
+
+**Performance Metrics**\
+Across all metrics, scan-level performance consistently exceeds slice-level performance, validating the majority voting approach. Accuracy improves from 75.18% to 78.67% (+3.49%), precision increases from 74.44% to 77.87% (+3.43%), recall rises from 77.36% to 80.62% (+3.26%), and F1 score gains from 75.87% to 79.22% (+3.35%). Interestingly, specificity shows a smaller improvement from 72.96% to 76.68% (+3.72%), and actually remains the weakest metric at the scan level, suggesting the model has more difficulty correctly identifying healthy controls than AD patients. The AUC-ROC also improves from 0.8247 to 0.8582 (+3.35%), indicating better separation between classes when predictions are aggregated. This consistent 3-4% improvement across all metrics demonstrates that the model's slice-level predictions, while individually noisy, contain reliable signal that becomes apparent when combined through majority voting.
+
+### Model Frequency Analysis
+![Model Frequency Analysis ](images/model_frequency_analysis.png "Model Frequency Analysis")
+
+
+### Misclassified Samples
+![Misclassified Samples](images/misclassified_samples_scan_level.png "Misclassified Samples")
 
 
 
@@ -352,7 +391,7 @@ use_mixup=True
 mixup_alpha=0.2
 
 # Options
-use_amp=True                    # Automatic Mixed Precision
+use_amp=True                   
 use_class_weights=False
 
 # Data
@@ -384,15 +423,19 @@ recognition/
 
 ## References - TBC
 1. Barkhof, F., Hazewinkel, M., Binnewijzend, M., & Smithuis, R. (2022, March 3). Dementia - role of MRI. Radiology Assistant. https://radiologyassistant.nl/neuroradiology/dementia/role-of-mri 
-2. Islam, T., Hafiz, Md. S., Jim, J. R., Kabir, Md. M., & Mridha, M. F. (2024, June 5). Https://www.sciencedirect.com/science/article/abs/pii/S1047847720300046?via=ihub. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
-3. Johnson, K. A., Fox, N. C., Sperling, R. A., & Klunk, W. E. (2012, April). Brain Imaging in alzheimer disease. Cold Spring Harbor perspectives in medicine. https://pmc.ncbi.nlm.nih.gov/articles/PMC3312396 
-4. Krishnapriya, S., & Karuna, Y. (2023, April 20). Pre-trained deep learning models for brain MRI image classification. Frontiers in human neuroscience. https://pmc.ncbi.nlm.nih.gov/articles/PMC10157370/ 
-5. Mayo Foundation for Medical Education and Research. (2024, November 8). Alzheimer’s disease. Mayo Clinic. https://www.mayoclinic.org/diseases-conditions/alzheimers-disease/symptoms-causes/syc-20350447 
-6. Rao, Y., Zhao, W., Zhu, Z., Lu, J., & Zhou, J. (2021, October 26). Global Filter Networks for Image Classification. arXiv.org. https://arxiv.org/abs/2107.00645 
-7. Safdar, M. F., Alkobaisi, S. S., & Zahra, F. T. (2020, March). A comparative analysis of data augmentation approaches for Magnetic Resonance Imaging (MRI) scan images of brain tumor. PubMed Central. https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/ 
-8. Zhang, K., Wang,  eidong, Cui, Y., LV, Z., & Fan, Y. (2024, January). GFNet: A pioneering approach for precisely estimating ash content in coal through the fusion of graph convolution and feedforward network. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
+2. Inglese, M., Patel, N., Linton-Reid, K., Loreto, F., Win, Z., Perry, R. J., Carswell, C., Grech-Sollars, M., Crum, W. R., Lu, H., Malhotra, P. A., & Aboagye, E. O. (2022a, June 20). A predictive model using the mesoscopic architecture of the living brain to detect alzheimer’s disease. Communications Medicine. https://www.nature.com/articles/s43856-022-00133-4 
+3. Inglese, M., Patel, N., Linton-Reid, K., Loreto, F., Win, Z., Perry, R. J., Carswell, C., Grech-Sollars, M., Crum, W. R., Lu, H., Malhotra, P. A., & Aboagye, E. O. (2022b, June 20). A predictive model using the mesoscopic architecture of the living brain to detect alzheimer’s disease. Communications Medicine. https://www.nature.com/articles/s43856-022-00133-4 
+4. Islam, T., Hafiz, Md. S., Jim, J. R., Kabir, Md. M., & Mridha, M. F. (2024, June 5). Https://www.sciencedirect.com/science/article/abs/pii/S1047847720300046?via=ihub. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
+5. Johnson, K. A., Fox, N. C., Sperling, R. A., & Klunk, W. E. (2012, April). Brain Imaging in alzheimer disease. Cold Spring Harbor perspectives in medicine. https://pmc.ncbi.nlm.nih.gov/articles/PMC3312396 
+6. Krishnapriya, S., & Karuna, Y. (2023, April 20). Pre-trained deep learning models for brain MRI image classification. Frontiers in human neuroscience. https://pmc.ncbi.nlm.nih.gov/articles/PMC10157370/ 
+7. Mayo Foundation for Medical Education and Research. (2024, November 8). Alzheimer’s disease. Mayo Clinic. https://www.mayoclinic.org/diseases-conditions/alzheimers-disease/symptoms-causes/syc-20350447 
+8. Rao, Y., Zhao, W., Zhu, Z., Lu, J., & Zhou, J. (2021, October 26). Global Filter Networks for Image Classification. arXiv.org. https://arxiv.org/abs/2107.00645 
+9. Safdar, M. F., Alkobaisi, S. S., & Zahra, F. T. (2020, March). A comparative analysis of data augmentation approaches for Magnetic Resonance Imaging (MRI) scan images of brain tumor. PubMed Central. https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/ 
+10. Smucny, J., Shi, G., Lesh, T. A., Carter, C. S., & Davidson, I. (2022, September 30). Https://www.sciencedirect.com/science/article/abs/pii/S1047847720300046?via=ihub. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
+11. Zhang, K., Wang,  eidong, Cui, Y., LV, Z., & Fan, Y. (2024, January). GFNet: A pioneering approach for precisely estimating ash content in coal through the fusion of graph convolution and feedforward network. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
 
 [^1]: https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/
 [^2]: https://www.sciencedirect.com/science/article/pii/S0952197623014859
-[^3]: https://www.sciencedirect.com/science/article/pii/S2213158222002790(to add ref)
-[^4]: https://www.nature.com/articles/s43856-022-00133-4(to add ref)
+[^3]: https://www.sciencedirect.com/science/article/pii/S2213158222002790
+[^4]: https://www.nature.com/articles/s43856-022-00133-4
+[^5]: https://pmc.ncbi.nlm.nih.gov/articles/PMC12260203/
