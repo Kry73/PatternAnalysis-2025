@@ -210,7 +210,7 @@ In this implementation, PGFNet architecture is implemented in three main variant
 | Small | ~26M  |[3, 4, 6, 3] |
 | Base | ~44M  |[3, 4, 18, 3] |
 
-## Training and Evaluation
+## Training & Evaluation
 
 ### Training
 training.py contains the main training loop for the model.
@@ -464,7 +464,7 @@ recognition/
 └── GFNet-s4979971
     ├── dataset.py      # Data loader and preprocessing
     ├── modules.py      # Model components ( GFNet, PyramidGFNet)
-    ├── train.py        # Training and validation
+    ├── train.py        # Training and evaluation
     ├── predict.py      # Evaluating the accuracy of a given model and generating visualisation
     ├── README.md       # This file
     ├── images          # Folder containing diagrams and visualisation
