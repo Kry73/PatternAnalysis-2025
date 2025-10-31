@@ -213,11 +213,49 @@ In this implementation, PGFNet architecture is implemented in three main variant
 ## Training and Evaluation
 
 ### Training
-training.py contains the main training loop for the model. Several mechanisms are implemented to enhance generalisation and stability during training.
+training.py contains the main training loop for the model.
+
+**Final Parameter**
+```r
+model_size='base',
+drop_rate=0.1,
+drop_path_rate=0.15,
+        
+# Training
+img_size=224,
+batch_size=24,
+num_epochs=350,
+learning_rate=5e-5,
+min_lr=1e-7,
+weight_decay=0.05,
+warmup_epochs=10,
+        
+# Early stopping
+early_stopping_patience=25,
+min_delta=0.001,
+        
+# Augmentation 
+use_mixup=True,
+mixup_alpha=0.4, 
+        
+# Options
+use_amp=True,
+
+```
+The model was trained using the PGFNet (Base) variant after the smaller variant plateaued at around 76–77% validation accuracy, suggesting that a deeper and higher-dimensional model was necessary to better capture the subtle morphological differences in Alzheimer’s pathology. The base configuration increases both embedding dimensions and hierarchical depth, enabling richer spatial-frequency representation of MRI features while remaining computationally efficient when trained with Automatic Mixed Precision (AMP).
+
+Several key mechanisms are implemented to enhance generalisation and stability during training.
 
 **Cross-Entropy Loss with Label Smoothing**\
+A cross-entropy loss with label smoothing (ε = 0.1) is employed to prevent overconfidence and improve generalization. Label smoothing introduces controlled uncertainty in the target distribution, preventing the model from becoming overly certain about its predictions. This is particularly valuable in Alzheimer’s Disease (AD) classification, where MRI slices often contain ambiguous or subtle anatomical differences between AD and normal control (NC) subjects.
 
 **Mixup Augmentation**\
+Mixup is a technique where the learner combines pairs of training instances to produce a virtual third instance that is a linear combination of the two instances and their labels. Following the implementation of this approach in pyschosis fMRI classification[^3], the authors found that an optimal coefficient of α = 0.2 yielded the best performance. Psychosis and Alzheimer’s disease share similarities in terms of subtle, diffuse structural and functional brain changes, making Mixup a suitable augmentation for both.
+
+However, in our study, we use α = 0.4, higher than the psychosis study. The reason is the fundamental difference in scan types. This project's dataset consists of structural MRI slices of the brain, each representing a discrete anatomical section, whereas fMRI captures dynamic functional activity over time. Slices in structural MRI can be more heterogeneous, and larger interpolation (higher α) allows the model to better generalize across patients and slice variability, without introducing unrealistic images. This adjustment helps the model learn robust representations for scan-level classification, mitigating overfitting and improving performance compared to using the lower 
+
+**Early Stop Loss**\
+Early stopping (patience = 25, min Δ = 0.001) was incorporated to prevent overtraining, particularly given the moderate dataset size. The patience value and small delta thresholds are chosen to allow the model a few epochs to recover from minor fluctuations in validation performance. This reduces the risk of stopping too early due to random noise in the validation set. Additionally, as training deep models like PGFNet can be time-intensive, early stopping allows us to halt training once performance plateaus, avoiding unnecessary epochs and reducing GPU hours.
 
 ## Results
 ⚠️ Note: Results are not fully reproducible due to missing random seed control. Running the same training may produce results varying by ±1-3%.
@@ -324,3 +362,4 @@ recognition/
 
 [^1]: https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/
 [^2]: https://www.sciencedirect.com/science/article/pii/S0952197623014859
+[^3]: https://www.sciencedirect.com/science/article/pii/S2213158222002790

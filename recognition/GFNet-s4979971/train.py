@@ -792,7 +792,7 @@ if __name__ == "__main__":
         use_amp=True,
         
         # Save
-        save_dir="./checkpoints_scan_level"
+        save_dir="./checkpoints"
     )
     
     print("\n" + "="*60)
