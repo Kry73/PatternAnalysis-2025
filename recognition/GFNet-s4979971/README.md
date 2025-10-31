@@ -257,8 +257,22 @@ However, in our study, we use α = 0.4, higher than the psychosis study. The rea
 **Early Stop Loss**\
 Early stopping (patience = 25, min Δ = 0.001) was incorporated to prevent overtraining, particularly given the moderate dataset size. The patience value and small delta thresholds are chosen to allow the model a few epochs to recover from minor fluctuations in validation performance. This reduces the risk of stopping too early due to random noise in the validation set. Additionally, as training deep models like PGFNet can be time-intensive, early stopping allows us to halt training once performance plateaus, avoiding unnecessary epochs and reducing GPU hours.
 
+**Slice Level vs Scan Level Training**\
+Our model is trained to classify individual MRI slices as either AD or NC. Slice-level predictions allow the model to learn local patterns and subtle anatomical features in each 2D slice. However slice-level accuracy is inherently limited as many slices, especially in edge cases, contain very subtle markers of AD. Some slices may appear almost normal, and even expert radiologists might struggle to identify them. This makes slice-level classification a challenging task. 
+
+Studies[^4] have found exture features extracted from a single axial slice of a T1-weighted (T1w) MRI scan achieved 93% accuracy on an internal test set. In contrast, using linear discriminant analysis with cortical thickness measurements, volumetric data, and hippocampal volume, shape, and texture features from a T1w MRI scan only reached 63% accuracy, highlighting that only certain slices carry the most predictive information for early AD detection.
+
+To address this, we aggregate slice-level predictions to produce a scan-level classification using majority voting. This ensures that even if a few slices are misclassified, the overall scan prediction remains robust.
+
+The distinction between slice-level and scan-level predictions informs our training strategies:
+* Mixup is applied at the slice level to help the model generalize better.
+* Early stopping is monitored at the slice level to prevent overfitting, while scan-level performance guides final model selection.
+
 ## Results
-⚠️ Note: Results are not fully reproducible due to missing random seed control. Running the same training may produce results varying by ±1-3%.
+⚠️ Note: Results are not fully reproducible due to missing random seed control. Running the same training may produce results varying by ±1%.
+
+
+
 
 ## Usage
 ### Dependencies
@@ -362,4 +376,5 @@ recognition/
 
 [^1]: https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/
 [^2]: https://www.sciencedirect.com/science/article/pii/S0952197623014859
-[^3]: https://www.sciencedirect.com/science/article/pii/S2213158222002790
+[^3]: https://www.sciencedirect.com/science/article/pii/S2213158222002790(to add ref)
+[^4]: https://www.nature.com/articles/s43856-022-00133-4(to add ref)
