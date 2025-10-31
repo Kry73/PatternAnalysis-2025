@@ -592,7 +592,7 @@ def plot_model_complete_analysis(results, save_dir):
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
     
     # Overall title
-    fig.suptitle('🧠 Complete Model Analysis: Alzheimer\'s Detection (AD vs NC)', 
+    fig.suptitle('Complete Model Analysis: Alzheimer\'s Detection (AD vs NC)', 
                 fontsize=16, fontweight='bold', y=0.98)
     
     plt.savefig(save_dir / 'model_complete_analysis.png', dpi=300, bbox_inches='tight')

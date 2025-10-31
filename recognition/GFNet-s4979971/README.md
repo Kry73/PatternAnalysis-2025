@@ -277,7 +277,7 @@ Each MRI slice is independently classified as AD or NC. Metrics such as accuracy
 **Scan-Level Evaluation**\
 Slice-level predictions are aggregated to obtain scan-level classifications using majority voting. This captures the overall diagnostic decision per scan and typically improves performance by reducing the influence of ambiguous slices. Scan-level metrics mirror those at the slice level and include confusion matrices and ROC-AUC curves.
 
-**Visual Analysis**\
+**Visual Analysis**
 * Misclassified scans are visualised to identify patterns in errors. 
 * Comprehensive visualisations include confusion matrices, performance metric comparisons, ROC curves
 * Model frequency analysis showing learned filters, feature maps, and attention patterns.
@@ -323,13 +323,55 @@ The scan-level AUC of 0.8582 means that if we randomly select one AD scan and on
 Across all metrics, scan-level performance consistently exceeds slice-level performance, validating the majority voting approach. Accuracy improves from 75.18% to 78.67% (+3.49%), precision increases from 74.44% to 77.87% (+3.43%), recall rises from 77.36% to 80.62% (+3.26%), and F1 score gains from 75.87% to 79.22% (+3.35%). Interestingly, specificity shows a smaller improvement from 72.96% to 76.68% (+3.72%), and actually remains the weakest metric at the scan level, suggesting the model has more difficulty correctly identifying healthy controls than AD patients. The AUC-ROC also improves from 0.8247 to 0.8582 (+3.35%), indicating better separation between classes when predictions are aggregated. This consistent 3-4% improvement across all metrics demonstrates that the model's slice-level predictions, while individually noisy, contain reliable signal that becomes apparent when combined through majority voting.
 
 ### Model Frequency Analysis
+
+To better understand what the Pyramid GFNet has learned, we performed a frequency-based analysis of the model across all four stages. This analysis examines three key components:
+1. **Learned Filters**: Each stage of PGFNet has frequency filters that transform input features. Visualizing these filters reveals which frequency components the model emphasizes at different stages, from low-level textures in early stages to more complex structural patterns in deeper stages.
+2. **Feature Maps**: We averaged the spatial features extracted from the test set at each stage. These maps show how the model encodes different anatomical and textural information across slices, highlighting regions that contribute most to the classification of AD vs NC.
+3. **Frequency Attention**: PGFNet employs frequency-domain attention mechanisms that assign weights to different frequency components. Averaging this attention across test samples shows which frequency bands the network prioritizes at each stage, offering insight into how it integrates local and global patterns.
+
 ![Model Frequency Analysis ](images/model_frequency_analysis.png "Model Frequency Analysis")
 
+**Stage 1 (High Resolution, Fine Details)**\
+The first stage operates on the highest resolution feature maps and shows learned filters distributed across a wide frequency spectrum (0-56 in both width and height), with slightly elevated responses in the low-frequency region (0-10) and scattered mid-frequency activations (10-30).
+
+The average features show strong activation across the entire frequency plane with a characteristic yellow-green pattern indicating uniform feature extraction at this early stage.
+
+However, the attention map is nearly black (values close to 0), suggesting that Stage 1 contributes minimal weight to the final decision—the model essentially learns that raw high-frequency details are not discriminative for AD detection. This makes neurological sense as Alzheimer's diagnosis depends on structural changes (ventricle size, hippocampal atrophy) rather than fine texture details that Stage 1 captures.
+
+**Stage 2 (Medium Resolution)**\
+The second stage processes downsampled features and shows learned filters concentrated in lower frequency ranges (0-28), with stronger responses in the 0-15 range compared to Stage 1.
+
+The feature activations display a distinct diagonal pattern with green-yellow regions indicating selective activation of specific frequency combinations.
+
+The attention map shows moderate activation (red-orange, values 1.0-4.5) primarily at very low frequencies (height 0-5, width 0-15) and near the edges, indicating the model has learned that medium-scale structural patterns carry some diagnostic information. This stage likely captures features like overall brain shape and larger anatomical structures.
+
+**Stage 3 (Low Resolution, Structural Features)**\
+The third stage operates on highly downsampled features with learned filters spanning only 0-14 in frequency space. The filters show concentrated responses in the low-frequency region (0-8), consistent with extracting coarse structural information.
+
+The feature activations display a more uniform green-cyan pattern with scattered yellow highlights, indicating consistent extraction of low-frequency components. 
+
+Critically, the attention map shows strong activation (bright orange-yellow, values 2.0-3.5) particularly at very low frequencies (height 0-4, width 0-6), demonstrating that Stage 3 is highly weighted in the final prediction. This suggests the model has learned that coarse structural patterns at this scale are most discriminative for AD—likely corresponding to ventricle size, overall brain volume, and regional atrophy patterns that are characteristic of Alzheimer's disease.
+
+**Stage 4 (Lowest Resolution, Global Context)**\
+The final stage processes the most abstract, lowest resolution features with learned filters covering only 0-7 in frequency space, focusing exclusively on very low frequencies. The filters show strong responses concentrated at the lowest frequencies (0-3), indicating extraction of global structural information. 
+
+The feature activations display a distinct pattern with yellow highlighting in specific regions, showing selective activation of particular frequency combinations. 
+
+Most notably, the attention map shows extremely strong uniform activation (bright orange-yellow, values 0.8-1.1) across nearly all frequency positions, indicating this stage receives the highest weight in final predictions. This stage likely captures the most global features: overall brain size ratios, symmetry, and large-scale structural relationships that correlate strongly with AD diagnosis.
+
+**Pyramid Model**\
+The progression from Stage 1 to Stage 4 reveals a clear hierarchical strategy, where early stages extract detailed frequency information but receive low attention weights (Stage 1 attention ≈ 0), while deeper stages focus on progressively lower frequencies and receive increasingly higher attention weights (Stage 4 attention ≈ 1.0). This learned hierarchy aligns perfectly with medical knowledge—Alzheimer's diagnosis relies on macroscopic structural changes (enlarged ventricles, hippocampal atrophy, cortical thinning) rather than microscopic texture patterns. The model has effectively learned to ignore high-frequency noise and focus on low-frequency structural features that carry diagnostic information.
+
+The heavy reliance on low-frequency structural features (Stages 3-4) makes the model robust to slice-level noise, in which individual slices may vary in quality or positioning, but coarse structural patterns remain consistent across a scan. This explains why scan-level aggregation improves performance by 3.49%. The near-zero attention to high frequencies in Stage 1 explains why aggressive image augmentations—rotation, translation, or noise—have limited impact on performance, as they primarily perturb high-frequency components while preserving the low-frequency structures that the model relies on. The concentration of discriminative information in Stages 3-4 also helps explain the model’s performance plateau at 78.67% as in the case where the most informative features are already captured at coarse resolution, further capacity or training alone will not improve results unless the model better integrates multi-scale information from earlier stages or captures subtler frequency interactions.
+
+It is possible that adding explicit attention mechanisms in Stages 1-2 to selectively combine high- and mid-frequency features with the dominant low-frequency features might capture subtle early-stage AD markers that do not manifest as obvious structural changes. This is so especially considering that the current near-zero attention to Stage 1 suggests it could either be removed for efficiency without sacrificing performance or, conversely, be undertrained and benefit from stage-specific supervision to learn complementary fine-grained features that are currently suppressed in favor of the more obvious low-frequency patterns.
 
 ### Misclassified Samples
 ![Misclassified Samples](images/misclassified_samples_scan_level.png "Misclassified Samples")
 
+The error analysis provides insights into model limitations. The 52 false negative cases (AD predicted as NC) likely include early-stage AD patients where structural brain changes are minimal and difficult to distinguish from normal aging, as well as possible label noise where the ground truth diagnosis may itself be uncertain. The 44 false positive cases (NC predicted as AD) may include elderly controls with age-related brain changes that mimic early AD pathology, or individuals with other neurological conditions not present in the training data. The fact that both error types are relatively balanced suggests the model has learned a reasonable decision boundary rather than being severely miscalibrated in one direction. However, the clinical cost of false negatives (missing AD patients) is typically considered higher than false positives (flagging healthy individuals for further testing), so the current 80.62% recall may be insufficient for deployment as a standalone diagnostic tool, though it could serve effectively as a screening mechanism to prioritize cases for expert review.
 
+Furthermore, this highlights a flaw in the current scan-level voting system, where all slices contribute equally, even though slices closer to the central region of the brain are likely to contain more disease-relevant information. As such future improvements could address this by weighting the voting mechanism such that central slices have greater influence on the final prediction, reducing false negatives while still leveraging the full scan for context.
 
 ## Usage
 ### Dependencies
@@ -399,7 +441,7 @@ data_dir="/home/groups/comp3710/ADNI/AD_NC"
 num_workers=4
 
 # Save
-save_dir="./checkpoints_scan_level"
+save_dir="./checkpoints"
 ```
 
 ### Evaluation
@@ -409,7 +451,6 @@ python predict.py
 ```
 
 ## File Structure
-
 ```
 recognition/
 └── GFNet-s4979971
@@ -423,16 +464,17 @@ recognition/
 
 ## References - TBC
 1. Barkhof, F., Hazewinkel, M., Binnewijzend, M., & Smithuis, R. (2022, March 3). Dementia - role of MRI. Radiology Assistant. https://radiologyassistant.nl/neuroradiology/dementia/role-of-mri 
-2. Inglese, M., Patel, N., Linton-Reid, K., Loreto, F., Win, Z., Perry, R. J., Carswell, C., Grech-Sollars, M., Crum, W. R., Lu, H., Malhotra, P. A., & Aboagye, E. O. (2022a, June 20). A predictive model using the mesoscopic architecture of the living brain to detect alzheimer’s disease. Communications Medicine. https://www.nature.com/articles/s43856-022-00133-4 
-3. Inglese, M., Patel, N., Linton-Reid, K., Loreto, F., Win, Z., Perry, R. J., Carswell, C., Grech-Sollars, M., Crum, W. R., Lu, H., Malhotra, P. A., & Aboagye, E. O. (2022b, June 20). A predictive model using the mesoscopic architecture of the living brain to detect alzheimer’s disease. Communications Medicine. https://www.nature.com/articles/s43856-022-00133-4 
-4. Islam, T., Hafiz, Md. S., Jim, J. R., Kabir, Md. M., & Mridha, M. F. (2024, June 5). Https://www.sciencedirect.com/science/article/abs/pii/S1047847720300046?via=ihub. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
-5. Johnson, K. A., Fox, N. C., Sperling, R. A., & Klunk, W. E. (2012, April). Brain Imaging in alzheimer disease. Cold Spring Harbor perspectives in medicine. https://pmc.ncbi.nlm.nih.gov/articles/PMC3312396 
-6. Krishnapriya, S., & Karuna, Y. (2023, April 20). Pre-trained deep learning models for brain MRI image classification. Frontiers in human neuroscience. https://pmc.ncbi.nlm.nih.gov/articles/PMC10157370/ 
-7. Mayo Foundation for Medical Education and Research. (2024, November 8). Alzheimer’s disease. Mayo Clinic. https://www.mayoclinic.org/diseases-conditions/alzheimers-disease/symptoms-causes/syc-20350447 
-8. Rao, Y., Zhao, W., Zhu, Z., Lu, J., & Zhou, J. (2021, October 26). Global Filter Networks for Image Classification. arXiv.org. https://arxiv.org/abs/2107.00645 
-9. Safdar, M. F., Alkobaisi, S. S., & Zahra, F. T. (2020, March). A comparative analysis of data augmentation approaches for Magnetic Resonance Imaging (MRI) scan images of brain tumor. PubMed Central. https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/ 
-10. Smucny, J., Shi, G., Lesh, T. A., Carter, C. S., & Davidson, I. (2022, September 30). Https://www.sciencedirect.com/science/article/abs/pii/S1047847720300046?via=ihub. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
-11. Zhang, K., Wang,  eidong, Cui, Y., LV, Z., & Fan, Y. (2024, January). GFNet: A pioneering approach for precisely estimating ash content in coal through the fusion of graph convolution and feedforward network. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
+2. Deng, J., Elghobashy, M. E., Zang, K., Patel, S. K., Guo, E., & Heybati, K. (2025, May 29). So you’ve got a high AUC, now what? an overview of important considerations when bringing machine-learning models from computer to bedside. Medical decision making : an international journal of the Society for Medical Decision Making. https://pmc.ncbi.nlm.nih.gov/articles/PMC12260203/ 
+3. Inglese, M., Patel, N., Linton-Reid, K., Loreto, F., Win, Z., Perry, R. J., Carswell, C., Grech-Sollars, M., Crum, W. R., Lu, H., Malhotra, P. A., & Aboagye, E. O. (2022a, June 20). A predictive model using the mesoscopic architecture of the living brain to detect alzheimer’s disease. Communications Medicine. https://www.nature.com/articles/s43856-022-00133-4 
+4. Inglese, M., Patel, N., Linton-Reid, K., Loreto, F., Win, Z., Perry, R. J., Carswell, C., Grech-Sollars, M., Crum, W. R., Lu, H., Malhotra, P. A., & Aboagye, E. O. (2022b, June 20). A predictive model using the mesoscopic architecture of the living brain to detect alzheimer’s disease. Communications Medicine. https://www.nature.com/articles/s43856-022-00133-4 
+5. Islam, T., Hafiz, Md. S., Jim, J. R., Kabir, Md. M., & Mridha, M. F. (2024, June 5). Https://www.sciencedirect.com/science/article/abs/pii/S1047847720300046?via=ihub. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
+6. Johnson, K. A., Fox, N. C., Sperling, R. A., & Klunk, W. E. (2012, April). Brain Imaging in alzheimer disease. Cold Spring Harbor perspectives in medicine. https://pmc.ncbi.nlm.nih.gov/articles/PMC3312396 
+7. Krishnapriya, S., & Karuna, Y. (2023, April 20). Pre-trained deep learning models for brain MRI image classification. Frontiers in human neuroscience. https://pmc.ncbi.nlm.nih.gov/articles/PMC10157370/ 
+8. Mayo Foundation for Medical Education and Research. (2024, November 8). Alzheimer’s disease. Mayo Clinic. https://www.mayoclinic.org/diseases-conditions/alzheimers-disease/symptoms-causes/syc-20350447 
+9. Rao, Y., Zhao, W., Zhu, Z., Lu, J., & Zhou, J. (2021, October 26). Global Filter Networks for Image Classification. arXiv.org. https://arxiv.org/abs/2107.00645 
+10. Safdar, M. F., Alkobaisi, S. S., & Zahra, F. T. (2020, March). A comparative analysis of data augmentation approaches for Magnetic Resonance Imaging (MRI) scan images of brain tumor. PubMed Central. https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/ 
+11. Smucny, J., Shi, G., Lesh, T. A., Carter, C. S., & Davidson, I. (2022, September 30). Https://www.sciencedirect.com/science/article/abs/pii/S1047847720300046?via=ihub. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
+12. Zhang, K., Wang,  eidong, Cui, Y., LV, Z., & Fan, Y. (2024, January). GFNet: A pioneering approach for precisely estimating ash content in coal through the fusion of graph convolution and feedforward network. Science Direct. https://www.med.upenn.edu/pmi/events/https-www-sciencedirect-com-science-article-abs-pii-s1047847720300046-via-3dihub 
 
 [^1]: https://pmc.ncbi.nlm.nih.gov/articles/PMC7085309/
 [^2]: https://www.sciencedirect.com/science/article/pii/S0952197623014859
