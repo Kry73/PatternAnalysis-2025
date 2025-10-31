@@ -5,7 +5,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
-from PIL import Image
 from sklearn.metrics import (
     accuracy_score, precision_recall_fscore_support,
     confusion_matrix, roc_curve, auc, classification_report

@@ -192,7 +192,7 @@ class ADNIDatasetWithScanID(Dataset):
 ```
 This class extends the standard PyTorch dataset to include scan-level metadata extraction from the file names of the ADNI dataset. Each MRI slice in the dataset is named following the format scanID_slicenumber.jpeg (e.g., 1031067_85.jpeg). This allows the dataset loader to identify not just the class label (e.g., AD or NC), but also the unique scan ID corresponding to the MRI volume from which each 2D slice originates.
 
-This is crucial to implement scan-level
+This is crucial to implement classification and aggregation of slice-level predictions into a single scan-level label during evaluation, which will be discussed later in the training section.
 
 ## Model Implementation
 This project implements PyramidGFNet (PGFNet), a hierarchical extension of GFNet, which has 4 stages, each marked with varying fearure map resoultion. This design enables the network to learn both fine-grained local textures and high-level semantic representation, similar to vision transformers but with substantially lower computational overhead.
@@ -463,9 +463,9 @@ python predict.py --checkpoint .\path\to\best_model.pth
 recognition/
 └── GFNet-s4979971
     ├── dataset.py      # Data loader and preprocessing
-    ├── modules.py      # Model components (GFBlock, GlobalFilter, GFNet)
+    ├── modules.py      # Model components ( GFNet, PyramidGFNet)
     ├── train.py        # Training and validation
-    ├── predict.py      # Evaluating the accuracy of a given model
+    ├── predict.py      # Evaluating the accuracy of a given model and generating visualisation
     ├── README.md       # This file
     ├── images          # Folder containing diagrams and visualisation
 ```

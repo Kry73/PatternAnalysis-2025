@@ -428,8 +428,7 @@ def train_model(
     mixup_alpha=0.3,
     
     # Save options
-    save_dir="./checkpoints_norm",
-    save_best_only=True
+    save_dir="./checkpoints_norm"
 ):
     """
     Main training function with SCAN-LEVEL evaluation.

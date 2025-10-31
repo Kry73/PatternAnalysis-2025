@@ -1,5 +1,5 @@
 import os
-from torchvision import datasets, transforms
+from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 from PIL import Image
