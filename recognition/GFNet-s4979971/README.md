@@ -450,6 +450,14 @@ save_dir="./checkpoints"
 python predict.py
 ```
 
+**Custom arguments**
+```ruby
+python predict.py --checkpoint .\path\to\best_model.pth
+--data_dir \path\to\the\dataset
+--batch_size batch_size
+--save_dir .\path\to\save_dir
+```
+
 ## File Structure
 ```
 recognition/
@@ -462,7 +470,7 @@ recognition/
     ├── images          # Folder containing diagrams and visualisation
 ```
 
-## References - TBC
+## References
 1. Barkhof, F., Hazewinkel, M., Binnewijzend, M., & Smithuis, R. (2022, March 3). Dementia - role of MRI. Radiology Assistant. https://radiologyassistant.nl/neuroradiology/dementia/role-of-mri 
 2. Deng, J., Elghobashy, M. E., Zang, K., Patel, S. K., Guo, E., & Heybati, K. (2025, May 29). So you’ve got a high AUC, now what? an overview of important considerations when bringing machine-learning models from computer to bedside. Medical decision making : an international journal of the Society for Medical Decision Making. https://pmc.ncbi.nlm.nih.gov/articles/PMC12260203/ 
 3. Inglese, M., Patel, N., Linton-Reid, K., Loreto, F., Win, Z., Perry, R. J., Carswell, C., Grech-Sollars, M., Crum, W. R., Lu, H., Malhotra, P. A., & Aboagye, E. O. (2022a, June 20). A predictive model using the mesoscopic architecture of the living brain to detect alzheimer’s disease. Communications Medicine. https://www.nature.com/articles/s43856-022-00133-4 
