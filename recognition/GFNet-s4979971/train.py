@@ -395,7 +395,6 @@ def plot_training_history(history, save_dir):
 def train_model(
     # Model selection
     model_size='small',
-    use_class_weights=True,
     
     # Model parameters
     img_size=224,
@@ -506,21 +505,8 @@ def train_model(
     print(f"Trainable parameters: {trainable_params:,}")
     
     # Loss and optimizer
-    if use_class_weights:
-        class_counts = torch.zeros(2)
-        for _, labels, _ in train_loader:
-            for label in labels:
-                class_counts[label] += 1
-        
-        total = class_counts.sum()
-        class_weights = (total / (2.0 * class_counts)).to(device)
-        
-        criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
-        print(f"Loss: Weighted CrossEntropyLoss")
-        print(f"  AD weight: {class_weights[0]:.3f}, NC weight: {class_weights[1]:.3f}")
-    else:
-        criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
-        print(f"Loss: Standard CrossEntropyLoss")
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    print(f"Loss: Standard CrossEntropyLoss")
     
     if use_mixup:
         print(f"Mixup: ENABLED (alpha={mixup_alpha})")
@@ -781,15 +767,15 @@ if __name__ == "__main__":
     
     model, history, metrics = train_model(
         # Model
-        model_size='small',
+        model_size='base',
         drop_rate=0.1,
         drop_path_rate=0.15,
         
         # Training
         img_size=224,
         batch_size=24,
-        num_epochs=250,
-        learning_rate=1e-4,
+        num_epochs=350,
+        learning_rate=5e-5,
         min_lr=1e-7,
         weight_decay=0.05,
         warmup_epochs=10,
@@ -798,13 +784,12 @@ if __name__ == "__main__":
         early_stopping_patience=25,
         min_delta=0.001,
         
-        # Augmentation (reduced for medical imaging)
+        # Augmentation 
         use_mixup=True,
-        mixup_alpha=0.2,  # Reduced from 0.3
+        mixup_alpha=0.4, 
         
         # Options
         use_amp=True,
-        use_class_weights=False,  # Data is balanced
         
         # Save
         save_dir="./checkpoints_scan_level"

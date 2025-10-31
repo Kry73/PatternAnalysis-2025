@@ -68,8 +68,9 @@ ADNI/
 ```
 
 ### dataset.py
-In this file, the datasets are loaded and data augmentations are applied for GFnet training on ADNI AD/NC dataset.
+In this file, the datasets are loaded and data augmentations are applied for GFnet training on ADNI AD/NC dataset. It also stores ADNIDatasetWithScanID class
 
+### Data Augmentation
 In the medical domain, data augmentation is important in improving a model robustness, especially in the case of low volume of datasets due to privacy issue or rarity of diseases. In this case, the size of the dataset is moderate, and thus appropriate data augmentation is needed to increase the effective variability of the training data, reduce overfitting and improve the model's generalisation to unseen MRI scans.
 
 **Training**\
@@ -143,6 +144,55 @@ test_transform = transforms.Compose([
         transforms.Normalize(mean=[0.2670], std=[0.2657])
     ])
 ```
+### ADNIDDatasetWithScanID
+```ruby
+class ADNIDatasetWithScanID(Dataset):
+    def __init__(self, root_dir, transform=None):
+        self.root_dir = root_dir
+        self.transform = transform
+        
+        # Collect all image paths and labels
+        self.samples = []
+        self.scan_ids = []
+        self.classes = sorted([d.name for d in Path(root_dir).iterdir() if d.is_dir()])
+        self.class_to_idx = {cls_name: i for i, cls_name in enumerate(self.classes)}
+        
+        for class_name in self.classes:
+            class_dir = Path(root_dir) / class_name
+            for img_path in list(class_dir.glob('*.jpeg')):
+                # Extract scan_id from filename
+                filename = img_path.stem  # Remove extension
+                
+                # Split by underscore and take everything except the last part (slice number)
+                parts = filename.split('_')
+                if len(parts) >= 2 and parts[-1].isdigit():
+                    # Last part is slice number, everything before is scan_id
+                    scan_id = '_'.join(parts[:-1])
+                else:
+                    # Fallback: use entire filename as scan_id
+                    scan_id = filename
+                
+                self.samples.append((str(img_path), self.class_to_idx[class_name]))
+                self.scan_ids.append(scan_id)
+    
+    def __len__(self):
+        return len(self.samples)
+    
+    def __getitem__(self, idx):
+        img_path, label = self.samples[idx]
+        scan_id = self.scan_ids[idx]
+        
+        # Load image
+        image = Image.open(img_path).convert('L')
+        
+        if self.transform:
+            image = self.transform(image)
+        
+        return image, label, scan_id
+```
+This class extends the standard PyTorch dataset to include scan-level metadata extraction from the file names of the ADNI dataset. Each MRI slice in the dataset is named following the format scanID_slicenumber.jpeg (e.g., 1031067_85.jpeg). This allows the dataset loader to identify not just the class label (e.g., AD or NC), but also the unique scan ID corresponding to the MRI volume from which each 2D slice originates.
+
+This is crucial to implement scan-level
 
 ## Model Implementation
 This project implements PyramidGFNet (PGFNet), a hierarchical extension of GFNet, which has 4 stages, each marked with varying fearure map resoultion. This design enables the network to learn both fine-grained local textures and high-level semantic representation, similar to vision transformers but with substantially lower computational overhead.
@@ -161,6 +211,13 @@ In this implementation, PGFNet architecture is implemented in three main variant
 | Base | ~44M  |[3, 4, 18, 3] |
 
 ## Training and Evaluation
+
+### Training
+training.py contains the main training loop for the model. Several mechanisms are implemented to enhance generalisation and stability during training.
+
+**Cross-Entropy Loss with Label Smoothing**\
+
+**Mixup Augmentation**\
 
 ## Results
 ⚠️ Note: Results are not fully reproducible due to missing random seed control. Running the same training may produce results varying by ±1-3%.
@@ -201,7 +258,7 @@ python train.py
 ```
 **Custom parameters**\
 Modify the default parameter
-```
+```ruby
 # Model parameters
 model_size='small'              # Options: 'tiny', 'small', 'base'
 drop_rate=0.1
@@ -240,14 +297,6 @@ save_dir="./checkpoints_scan_level"
 **Basic usage**
 ```
 python predict.py
-```
-**Custom parameters**
-```
-python evaluate.py \
-  --checkpoint ./models/my_best_model.pth \
-  --data_dir /path/to/your/data \
-  --batch_size 32 \
-  --save_dir ./my_results
 ```
 
 ## File Structure
